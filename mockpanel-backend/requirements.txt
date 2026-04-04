@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-dotenv
+httpx
+redis>=4.5.0
+PyMuPDF
+supabase
+google-generativeai
+anthropic
+arq>=0.25.0
+
