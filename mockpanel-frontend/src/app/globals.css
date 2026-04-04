@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* ⚪ LIGHT MODE: Pure Zinc Style */
+  --background: #fafafa; 
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --border: #e4e4e7;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --brand: #6366f1;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+}
+
+.dark {
+  /* ⚫ DARK MODE: Obsidian (Light Black) Style */
+  --background: #09090b; 
+  --foreground: #fafafa;
+  --card: #121214; 
+  --card-foreground: #fafafa;
+  --border: #27272a; 
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --brand: #818cf8;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Elite Glass Card */
+.mp-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: 0 4px 20px -1px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s ease;
+}
+
+.dark .mp-card {
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* High-End Button */
+.mp-btn-primary {
+  background: var(--foreground);
+  color: var(--background);
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 12px 28px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.mp-btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* Thinking Dot Animation */
+.mp-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: mp-thinking-dots 1.4s ease-in-out infinite;
+}
+
+@keyframes mp-thinking-dots {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
+  40%           { transform: scale(1.2); opacity: 1; }
+}
