@@ -28,8 +28,11 @@ async def log_requests(request: Request, call_next):
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    # Production mein isey real domain se replace karein
-    allow_origins=["http://localhost:3000"], 
+    # ✅ FIX: Vercel ka live link add kar diya hai
+    allow_origins=[
+        "http://localhost:3000", 
+        "https://mock-panel.vercel.app"
+    ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
