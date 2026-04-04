@@ -8,6 +8,7 @@ PyMuPDF
 supabase
 google-genai
 anthropic
+openai
 arq>=0.25.0
 python-jose[cryptography]
 passlib[bcrypt]
