@@ -9,6 +9,7 @@ supabase
 google-genai
 anthropic
 openai
+edge-tts
 arq>=0.25.0
 python-jose[cryptography]
 passlib[bcrypt]
