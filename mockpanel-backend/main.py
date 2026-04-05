@@ -8,7 +8,7 @@ from db.redis_client import get_redis
 # --- ROUTER IMPORTS ---
 from api.v1.sessions import router as sessions_router
 from api.v1.websockets import router as websockets_router
-from api.v1.auth import router as auth_router  # ✅ NEW: Auth router import kiya
+from api.v1.auth import router as auth_router
 
 app = FastAPI(
     title="MockPanel Backend",
@@ -16,42 +16,43 @@ app = FastAPI(
     debug=settings.debug
 )
 
-# Logging middleware to see all incoming requests
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    # Print clean logs for debugging
-    print(f"🚀 Received request: {request.method} {request.url}")
-    response = await call_next(request)
-    print(f"✅ Response status: {response.status_code}")
-    return response
-
-# Add CORS middleware
+# 1️⃣ CORS middleware — SABSE PEHLE register karo
+# [FIX-CORS] allow_origins mein production Vercel domain add kiya
 app.add_middleware(
     CORSMiddleware,
-    # Production mein isey real domain se replace karein
-    allow_origins=["http://localhost:3000"], 
+    allow_origins=[
+        "https://mock-panel.vercel.app",  # Production frontend
+        "http://localhost:3000",           # Local dev (CRA / Next)
+        "http://localhost:5173",           # Local dev (Vite)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 2️⃣ Logging middleware — CORS ke baad
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"🚀 Received request: {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"✅ Response status: {response.status_code}")
+    return response
+
 # --- INCLUDE ROUTERS ---
-# Auth router ko pehle include karna better practice hai
-app.include_router(auth_router)       # ✅ NEW: Isse /api/v1/auth/signup chalne lagega
+app.include_router(auth_router)
 app.include_router(sessions_router)
 app.include_router(websockets_router)
 
 @app.get("/")
 def read_root():
     return {
-        "status": "online", 
+        "status": "online",
         "message": "Welcome to MockPanel AI Engine",
         "version": "1.0.0"
     }
 
 @app.get("/env-check")
 def check_env():
-    # Sensitive keys ko mask kar diya hai safety ke liye
     env_status = {
         "ENV": settings.env,
         "SUPABASE_URL": "Loaded" if settings.supabase_url else "Not Set",
@@ -63,7 +64,6 @@ def check_env():
 
 if __name__ == "__main__":
     import uvicorn
-    # Settings se host aur port utha rahe hain
     uvicorn.run(
         "main:app",
         host=settings.api_host if hasattr(settings, 'api_host') else "0.0.0.0",
