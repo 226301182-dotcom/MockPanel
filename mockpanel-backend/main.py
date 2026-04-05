@@ -50,7 +50,7 @@ async def log_requests(request: Request, call_next):
 
 # --- INCLUDE ROUTERS ---
 # Note: Auth usually goes first to verify tokens before other routes
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(auth_router)
 app.include_router(sessions_router, prefix="/api/v1/sessions", tags=["sessions"])
 app.include_router(websockets_router, tags=["websockets"]) # Websockets usually don't need prefix
 
