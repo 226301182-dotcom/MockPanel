@@ -1,6 +1,17 @@
 "use client";
 
 // app/login/page.tsx
+// ════════════════════════════════════════════════════════════════════════════════
+// PRODUCTION v2.0 — FULLY RESPONSIVE AUTH PAGE
+//
+// FIXES & UPDATES:
+//   [RESPONSIVE] Fixed squished UI on extreme narrow screens (mobile/split-screen).
+//   [UI] Dynamic padding on the main card (p-5 on mobile, p-8 on larger screens).
+//   [TYPOGRAPHY] Scaled down headings, labels, and text inputs for small viewports
+//                to prevent awkward word-wrapping.
+//   [LAYOUT] Used 100dvh for perfect mobile vertical centering.
+// ════════════════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, type AuthUser } from "@/context/AuthContext";
@@ -13,7 +24,7 @@ function GridBackground() {
     <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
       {/* Dot grid - adapts to theme */}
       <div
-        className="absolute inset-0 opacity-[0.15] dark:opacity-[0.15] opacity-20"
+        className="absolute inset-0 opacity-[0.15] dark:opacity-[0.15]"
         style={{
           backgroundImage: "radial-gradient(circle, var(--foreground) 1px, transparent 1px)",
           backgroundSize:  "40px 40px",
@@ -22,8 +33,8 @@ function GridBackground() {
       {/* Radial vignette - uses dynamic background variable */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_50%,transparent_40%,var(--background)_100%)]" />
       {/* Accent glows */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-brand/20 rounded-full blur-[100px]" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-violet-600/15 rounded-full blur-[120px]" />
+      <div className="absolute -top-32 -left-32 w-72 h-72 sm:w-96 sm:h-96 bg-brand/20 rounded-full blur-[80px] sm:blur-[100px]" />
+      <div className="absolute -bottom-32 -right-32 w-72 h-72 sm:w-96 sm:h-96 bg-violet-600/15 rounded-full blur-[90px] sm:blur-[120px]" />
     </div>
   );
 }
@@ -48,8 +59,8 @@ function AuthInput({
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <div>
-      <label className="block text-[10px] uppercase tracking-[0.18em] font-semibold text-text-secondary mb-2.5">
+    <div className="w-full">
+      <label className="block text-[9px] sm:text-[10px] uppercase tracking-[0.15em] sm:tracking-[0.18em] font-semibold text-text-secondary mb-1.5 sm:mb-2.5">
         {label}
       </label>
       <div
@@ -69,7 +80,7 @@ function AuthInput({
           placeholder={placeholder}
           autoComplete={autoComplete}
           autoFocus={autoFocus}
-          className="w-full bg-transparent px-4 py-3.5 text-[15px] text-foreground placeholder-muted-foreground outline-none"
+          className="w-full bg-transparent px-3 py-3 sm:px-4 sm:py-3.5 text-[14px] sm:text-[15px] text-foreground placeholder-muted-foreground outline-none"
         />
       </div>
     </div>
@@ -141,11 +152,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 relative transition-colors duration-300">
+    // Used 100dvh for perfect vertical centering on mobile browsers
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-3 sm:p-4 relative transition-colors duration-300 w-full overflow-hidden">
       <GridBackground />
 
       <div
-        className="w-full max-w-[400px] relative z-10"
+        className="w-full max-w-[400px] relative z-10 mx-auto"
         style={{
           opacity:   animIn ? 1 : 0,
           transform: animIn ? "translateY(0)" : "translateY(8px)",
@@ -153,29 +165,30 @@ export default function LoginPage() {
         }}
       >
         {/* Brand mark */}
-        <div className="flex items-center justify-center gap-2.5 mb-10">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand to-violet-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
-            <span className="text-white font-black text-sm">M</span>
+        <div className="flex items-center justify-center gap-2 sm:gap-2.5 mb-6 sm:mb-10">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-br from-brand to-violet-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+            <span className="text-white font-black text-xs sm:text-sm">M</span>
           </div>
-          <span className="text-foreground font-bold text-lg tracking-tight">MockPanel</span>
+          <span className="text-foreground font-bold text-base sm:text-lg tracking-tight">MockPanel</span>
         </div>
 
-        {/* Card */}
-        <div className="mp-card p-8 backdrop-blur-xl">
+        {/* Card - Responsive Paddings */}
+        <div className="mp-card p-5 sm:p-8 backdrop-blur-xl w-full rounded-2xl border border-border shadow-xl">
+          
           {/* Heading */}
-          <div className="mb-7">
-            <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
+          <div className="mb-5 sm:mb-7">
+            <h1 className="text-lg sm:text-xl font-bold text-foreground tracking-tight mb-1 leading-snug">
               {mode === "login" ? "Welcome back" : "Create your account"}
             </h1>
-            <p className="text-sm text-text-secondary">
+            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
               {mode === "login"
-                ? "Sign in to continue your interview prep."
+                ? "Sign in to continue your prep."
                 : "Join MockPanel. Your first session is free."}
             </p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4 w-full">
             {mode === "signup" && (
               <AuthInput
                 label="Full Name"
@@ -206,29 +219,29 @@ export default function LoginPage() {
               autoComplete={mode === "login" ? "current-password" : "new-password"}
             />
 
-            {/* Error */}
+            {/* Error Message */}
             {error && (
-              <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 w-full">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-red-600 dark:text-red-400 text-[13px] leading-relaxed">{error}</p>
+                <p className="text-red-600 dark:text-red-400 text-[12px] sm:text-[13px] leading-relaxed break-words">{error}</p>
               </div>
             )}
 
-            {/* Submit */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="relative mt-1 w-full h-12 rounded-xl font-semibold text-[15px] overflow-hidden transition-all duration-200 disabled:opacity-60 text-white"
+              className="relative mt-1 w-full h-10 sm:h-12 rounded-xl font-semibold text-[14px] sm:text-[15px] overflow-hidden transition-all duration-200 disabled:opacity-60 text-white flex-shrink-0"
               style={{
                 background:  "linear-gradient(135deg, var(--brand) 0%, #7c3aed 100%)",
                 boxShadow:   loading ? "none" : "0 0 24px rgba(99,102,241,0.35)",
               }}
             >
               {loading ? (
-                <span className="flex items-center justify-center gap-2.5">
-                  <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                <span className="flex items-center justify-center gap-2 sm:gap-2.5">
+                  <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                   <span>
                     {mode === "login" ? "Signing in…" : "Creating account…"}
                   </span>
@@ -242,14 +255,14 @@ export default function LoginPage() {
           </form>
 
           {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
+          <div className="flex items-center gap-2 sm:gap-3 my-5 sm:my-6 w-full">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-[11px] text-text-secondary uppercase tracking-wider">or</span>
+            <span className="text-[10px] sm:text-[11px] text-text-secondary uppercase tracking-wider">or</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
           {/* Mode switch */}
-          <p className="text-center text-[13px] text-text-secondary">
+          <p className="text-center text-[12px] sm:text-[13px] text-text-secondary w-full">
             {mode === "login" ? (
               <>
                 Don&apos;t have an account?{" "}
@@ -277,10 +290,10 @@ export default function LoginPage() {
         </div>
 
         {/* Footer note */}
-        <p className="text-center text-[11px] text-text-secondary mt-6 leading-relaxed">
+        <p className="text-center text-[10px] sm:text-[11px] text-text-secondary mt-5 sm:mt-6 leading-relaxed px-4 w-full">
           By continuing, you agree to our{" "}
-          <span className="text-foreground">Terms of Service</span> and{" "}
-          <span className="text-foreground">Privacy Policy</span>.
+          <span className="text-foreground font-medium">Terms of Service</span> and{" "}
+          <span className="text-foreground font-medium">Privacy Policy</span>.
         </p>
       </div>
     </div>

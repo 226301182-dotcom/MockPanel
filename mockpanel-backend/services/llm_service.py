@@ -1,6 +1,6 @@
 # services/llm_service.py
 # ════════════════════════════════════════════════════════════════════════════════
-# PRODUCTION-READY v3.0 — 6-MODEL WATERFALL FALLBACK
+# PRODUCTION-READY v3.1 — 6-MODEL WATERFALL FALLBACK
 #
 # FALLBACK ORDER:
 #   1. Groq         — llama-3.1-8b-instant          (fastest, primary)
@@ -17,6 +17,10 @@
 #   [FIX-18] Gemini uses system_instruction param (not user content).
 #   [FIX-OR] OpenRouter iterates through OR_MODELS array — if one model
 #            returns 429/503, tries next automatically. No manual changes needed.
+#   [WB-7]  _opening_rules from candidate_info now injected into system prompt.
+#            Stops LLM from echoing rules like "(Remember to keep your response
+#            within the 18-word limit)" in its output. Rules go to system level,
+#            not user message level.
 # ════════════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -39,10 +43,10 @@ GEMINI_MODEL = "gemini-2.5-flash"
 # [FIX-OR] Ordered fallback list — tried top-to-bottom on any OR failure.
 # Add new free models at the TOP to prefer them first.
 OR_MODELS = [
-    "meta-llama/llama-3.2-3b-instruct:free",         # Llama 3.2 (Fast & Reliable)
+    "meta-llama/llama-3.2-3b-instruct:free",          # Llama 3.2 (Fast & Reliable)
     "google/gemini-2.0-flash-lite-preview-02-05:free", # Gemini Flash Lite
-    "qwen/qwen-2-7b-instruct:free",                  # Strong backup
-    "openrouter/free"                                # Auto-fallback
+    "qwen/qwen-2-7b-instruct:free",                   # Strong backup
+    "openrouter/free"                                  # Auto-fallback
 ]
 TEMPERATURE = 0.72
 MAX_TOKENS  = 512
@@ -81,6 +85,7 @@ class LLMService:
     # ════════════════════════════════════════════════════════════════════════════
     # SYSTEM PROMPT BUILDER
     # [FIX-15] resume_context embedded ONCE here — never in per-turn messages
+    # [WB-7]   _opening_rules injected at system level — never leaks to output
     # ════════════════════════════════════════════════════════════════════════════
     def _build_system_prompt(
         self,
@@ -158,8 +163,22 @@ class LLMService:
             "════════════════════════════════════════════════════════════════\n"
         )
 
-        # Final order: domain persona → resume (once) → runtime context
-        return domain_system + resume_block + runtime_context
+        # [WB-7] Opening rules — set by websockets.py only for is_first=True turn.
+        # Injected here at SYSTEM level so LLM obeys them without echoing them.
+        # On all subsequent turns this key is absent → empty string → no-op.
+        opening_rules      = candidate_info.get("_opening_rules", "").strip()
+        opening_rules_block = (
+            "\n\n════════════════════════════════════════════════════════════════\n"
+            "OPENING TURN CONSTRAINTS (THIS TURN ONLY)\n"
+            "════════════════════════════════════════════════════════════════\n"
+            f"{opening_rules}\n"
+            "════════════════════════════════════════════════════════════════\n"
+        ) if opening_rules else ""
+
+        # Final assembly order:
+        #   domain persona → resume (once, empty on turn 1) → runtime context
+        #   → opening rules (only on turn 1, empty afterwards)
+        return domain_system + resume_block + runtime_context + opening_rules_block
 
     # ════════════════════════════════════════════════════════════════════════════
     # GEMINI CONTENT BUILDER
@@ -236,7 +255,7 @@ class LLMService:
         messages:       list[dict],
         domain:         str = "sde",
         candidate_info: dict | None = None,
-        resume_context: str = "",          # [FIX-15]
+        resume_context: str = "",
     ):
         system_prompt = self._build_system_prompt(domain, candidate_info, resume_context)
 
@@ -250,14 +269,14 @@ class LLMService:
             except Exception as e:
                 logger.error("❌ Groq stream failed: %s — trying OpenRouter", e)
 
-        # ── 2. OpenRouter — iterate through all 5 free models ─────────────────
+        # ── 2. OpenRouter — iterate through all free models ────────────────────
         if self.or_available:
             for model in OR_MODELS:
                 try:
                     logger.debug("🤖 LLM: OpenRouter %s", model)
                     async for chunk in self._stream_openrouter(system_prompt, messages, model):
                         yield chunk
-                    return  # success — stop trying further
+                    return
                 except Exception as e:
                     logger.warning("⚠️ OpenRouter %s failed: %s — trying next model", model, e)
             logger.error("❌ All OpenRouter models exhausted — falling back to Gemini")
@@ -305,7 +324,7 @@ class LLMService:
             except Exception as e:
                 logger.error("❌ Groq generate failed: %s", e)
 
-        # ── 2. OpenRouter — iterate through all 5 free models ─────────────────
+        # ── 2. OpenRouter — iterate through all free models ────────────────────
         if self.or_available:
             for model in OR_MODELS:
                 try:

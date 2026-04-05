@@ -1,8 +1,19 @@
 "use client";
 
+// app/page.tsx
+// ════════════════════════════════════════════════════════════════════════════════
+// PRODUCTION v3.0 — AUTH-AWARE ROUTING
+//
+// FIXES & UPDATES:
+//   [AUTH FIX] Replaced hardcoded "/dashboard" links. Now checks if the user is 
+//              logged in using `useAuth`. If not logged in, redirects to "/login".
+//   [UI] Kept the clean, responsive layout and animations.
+// ════════════════════════════════════════════════════════════════════════════════
+
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
+import { useAuth } from "@/context/AuthContext"; // Import AuthContext
 
 interface Pillar {
   num: string; title: string; tag: string;
@@ -194,7 +205,7 @@ function EvalPillarsCard() {
 }
 
 // ── Ambient Background ────────────────────────────────────────────────────────
-function AmbientMesh({ domain }: { domain: Domain | null }) {
+function AmbientMesh({ domain }: { domain: string | null }) {
   const color = domain === "upsc" ? "#f59e0b" : domain === "psu" ? "#10b981" : "#6366f1";
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
@@ -216,6 +227,11 @@ function AmbientMesh({ domain }: { domain: Domain | null }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Home() {
+  const { user } = useAuth(); // Check user authentication state
+
+  // Target route based on auth status
+  const targetRoute = user ? "/dashboard" : "/login";
+
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <AmbientMesh domain={null} />
@@ -264,16 +280,16 @@ export default function Home() {
             ))}
           </ul>
 
-          {/* CTAs - Buttons Fixed */}
+          {/* CTAs - Links conditionally point to dashboard or login */}
           <div className="flex flex-wrap gap-4">
             <Link 
-              href="/dashboard" 
+              href={targetRoute} 
               className="mp-btn-primary px-7 py-3.5 text-[15px] cursor-pointer inline-flex items-center justify-center whitespace-nowrap"
             >
               Take Mock Interview
             </Link>
             <Link
-              href="/dashboard"
+              href={targetRoute}
               className="px-7 py-3.5 rounded-xl border border-[var(--border)]
                          font-semibold hover:bg-[var(--muted)] transition-all text-[15px] 
                          cursor-pointer inline-flex items-center justify-center whitespace-nowrap bg-[var(--background)]"
@@ -306,7 +322,7 @@ export default function Home() {
             { title: "PSU Engineering",     desc: "Technical & HR Panel for NTPC, BHEL, and ONGC.",      icon: "🏭" },
             { title: "FAANG SDE Rounds",    desc: "System Design and Behavioral drills for Big Tech.",    icon: "⚡" },
           ].map((goal) => (
-            <Link href="/dashboard" key={goal.title}
+            <Link href={targetRoute} key={goal.title}
               className="mp-card p-8 hover:-translate-y-1 transition-all group cursor-pointer bg-[var(--card)]">
               <div className="text-4xl mb-6 grayscale group-hover:grayscale-0 transition-all">{goal.icon}</div>
               <h4 className="font-bold text-xl mb-2">{goal.title}</h4>
@@ -316,8 +332,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA Bottom - Button Fixed */}
-      {/* CTA Bottom - Button Fixed */}
+      {/* CTA Bottom - Conditional routing */}
       <section className="max-w-4xl mx-auto px-6 py-16 md:py-24 text-center relative z-10 bg-[var(--background)]">
         <div className="mp-card p-8 md:p-16 bg-gradient-to-b from-transparent to-indigo-500/5 overflow-hidden mx-auto max-w-[90%] sm:max-w-none">
           <h2 className="text-3xl md:text-4xl font-black mb-4">Ready to enter the room?</h2>
@@ -325,7 +340,7 @@ export default function Home() {
             Your personalized session starts in 60 seconds.
           </p>
           <Link 
-            href="/dashboard" 
+            href={targetRoute} 
             className="mp-btn-primary px-6 md:px-10 py-3.5 md:py-4 text-[15px] md:text-lg cursor-pointer inline-flex items-center justify-center whitespace-nowrap w-full sm:w-auto"
           >
             Start Free Session

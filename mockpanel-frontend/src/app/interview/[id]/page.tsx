@@ -2,13 +2,12 @@
 
 // app/interview/[id]/page.tsx
 // ════════════════════════════════════════════════════════════════════════════════
-// PRODUCTION v17.0 — FULL LIGHT/DARK THEME SUPPORT RESTORED
+// PRODUCTION v18.5 — CAMERA STREAM RENDERING FIX
 //
 // FIXES & UPDATES:
-//   [THEME FIX] Removed hardcoded hex colors (`#09090b`, `#18181b`). 
-//               Replaced them with responsive Tailwind `dark:` modifiers 
-//               so the Light Theme works perfectly again.
-//   [UI] Maintained the strict flexbox architecture and anti-overlap layout.
+//   [CAMERA FIX] Solved the "Black Box" PiP issue. The <video> element is now
+//                always rendered in the DOM to preserve the React Ref, and toggled 
+//                visually using CSS. This ensures `srcObject` always attaches properly.
 // ════════════════════════════════════════════════════════════════════════════════
 
 import {
@@ -396,9 +395,15 @@ function InterviewRoomInner() {
   // ── USER PiP ──
   const UserView = (
     <div className="w-full h-full bg-white dark:bg-[#18181b] relative overflow-hidden flex items-center justify-center rounded-xl md:rounded-2xl">
-      {isCamOn && camAllowed === true ? (
-        <video ref={userVideoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay playsInline muted />
-      ) : (
+      {/* MAGIC FIX: Video tag is ALWAYS in the DOM to keep the ref intact. CSS block/hidden controls visibility */}
+      <video 
+        ref={userVideoRef} 
+        className={`w-full h-full object-cover scale-x-[-1] ${isCamOn && camAllowed ? 'block' : 'hidden'}`} 
+        autoPlay 
+        playsInline 
+        muted 
+      />
+      {(!isCamOn || !camAllowed) && (
         <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#18181b]">
           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-zinc-100 dark:bg-[#09090b] flex items-center justify-center border border-zinc-200 dark:border-white/5">
             <span className="text-[10px] sm:text-[13px] font-bold text-blue-600 dark:text-blue-100/90 tracking-wide">YOU</span>
