@@ -1,7 +1,6 @@
 # core/security.py
 # ════════════════════════════════════════════════════════════════════════════════
 # PRODUCTION AUTH — bcrypt password hashing + JWT token lifecycle
-# FIX: Added truncate_base64=True to handle bcrypt 72-character limit.
 # ════════════════════════════════════════════════════════════════════════════════
 
 import re
@@ -23,11 +22,10 @@ ALGORITHM          = "HS256"
 ACCESS_TOKEN_DAYS  = 7          # Token valid for 7 days
 REFRESH_TOKEN_DAYS = 30         # Refresh token valid for 30 days
 
-# [FIX] truncate_base64=True prevents the "72 bytes" ValueError with newer bcrypt
+# [FIX] truncate_base64 hata diya hai kyunki bcrypt==4.0.1 ke saath ye error deta hai
 pwd_context = CryptContext(
     schemes=["bcrypt"], 
-    deprecated="auto",
-    truncate_base64=True 
+    deprecated="auto"
 )
 
 oauth2_scheme = OAuth2PasswordBearer(
