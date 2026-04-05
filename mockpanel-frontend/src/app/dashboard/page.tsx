@@ -2,7 +2,7 @@
 
 // app/dashboard/page.tsx
 import { AnimatePresence, motion } from "framer-motion";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import { sessionAPI, type CreateSessionRequest } from "@/lib/api";
 
 type Domain = "upsc" | "psu" | "sde";
@@ -48,7 +48,9 @@ const TOPICS: Record<Domain, string[]> = {
   sde:  ["System Design", "Data Structures", "Algorithms", "Distributed Systems", "Behavioral", "API Design", "Database Design"],
 };
 
-const spring = { type: "spring", stiffness: 380, damping: 32 };
+// ✅ FIX: "as const" add kiya — TypeScript ab "spring" ko string nahi,
+// literal type manega. Framer Motion ka Transition type match ho jaayega.
+const spring = { type: "spring" as const, stiffness: 380, damping: 32 };
 
 // ─── Ambient mesh background ──────────────────────────────────────────────────
 function AmbientMesh({ domain }: { domain: Domain | null }) {
@@ -206,45 +208,36 @@ function Chip({ label, selected, onClick }: { label: string; selected: boolean; 
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [step,             setStep]           = useState<1 | 2 | 3>(1);
-  const [mode,             setMode]           = useState<Mode>("interview");
-  const [domain,           setDomain]         = useState<Domain | null>(null);
-  const [name,             setName]           = useState("");
-  const [targetYear,       setTargetYear]     = useState("");
-  
-  // 🔥 UPDATE: String se Array me change kar diya gaya hai multiple select ke liye
-  const [topics,           setTopics]         = useState<string[]>([]);
-  const [customTopic,      setCustomTopic]    = useState(""); // For input box
-  
-  const [resumeFile,       setResumeFile]     = useState<File | null>(null);
-  const [isDragging,       setIsDragging]     = useState(false);
-  const [durationMins,     setDurationMins]   = useState("40");
-  const [difficulty,       setDifficulty]     = useState("Moderate");
-  const [language,         setLanguage]       = useState("English");
-  const [submitting,       setSubmitting]     = useState(false);
-  const [error,            setError]          = useState<string | null>(null);
+  const [step,         setStep]       = useState<1 | 2 | 3>(1);
+  const [mode,         setMode]       = useState<Mode>("interview");
+  const [domain,       setDomain]     = useState<Domain | null>(null);
+  const [name,         setName]       = useState("");
+  const [targetYear,   setTargetYear] = useState("");
+  const [topics,       setTopics]     = useState<string[]>([]);
+  const [customTopic,  setCustomTopic]= useState("");
+  const [resumeFile,   setResumeFile] = useState<File | null>(null);
+  const [isDragging,   setIsDragging] = useState(false);
+  const [durationMins, setDurationMins] = useState("40");
+  const [difficulty,   setDifficulty] = useState("Moderate");
+  const [language,     setLanguage]   = useState("English");
+  const [submitting,   setSubmitting] = useState(false);
+  const [error,        setError]      = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectedDomain = DOMAINS.find((d) => d.id === domain);
   const canStep1 = domain !== null;
-  // Validation array length se check hogi
   const canStep2 = name.trim().length >= 2 && (mode === "interview" || topics.length > 0);
 
-  // Helper to toggle topic selection
   const toggleTopic = (t: string) => {
-    if (topics.includes(t)) {
-      setTopics(topics.filter((item) => item !== t));
-    } else {
-      setTopics([...topics, t]);
-    }
+    setTopics((prev) =>
+      prev.includes(t) ? prev.filter((item) => item !== t) : [...prev, t]
+    );
   };
 
   const handleAddCustomTopic = () => {
     const t = customTopic.trim();
-    if (t && !topics.includes(t)) {
-      setTopics([...topics, t]);
-    }
+    if (t && !topics.includes(t)) setTopics((prev) => [...prev, t]);
     setCustomTopic("");
   };
 
@@ -252,30 +245,22 @@ export default function DashboardPage() {
     if (!domain || !canStep2) return;
     setSubmitting(true);
     setError(null);
-
     try {
       const payload: CreateSessionRequest = {
-        domain:          domain,
+        domain,
         mode:            mode as any,
         name:            name.trim(),
         targetYear:      targetYear.trim() || undefined,
         durationMinutes: parseInt(durationMins),
         difficulty:      difficulty as any,
         language:        language as any,
-        // Backend ke hisab se comma separated string me bhej rahe hain
-        topic:           topics.length > 0 ? topics.join(", ") : undefined, 
+        topic:           topics.length > 0 ? topics.join(", ") : undefined,
       };
-
       const session = await sessionAPI.createSession(payload);
-
       if (resumeFile && mode === "interview") {
-        try {
-          await sessionAPI.uploadResume(session.session_id, resumeFile);
-        } catch (e) {
-          console.warn("Resume upload failed (continuing):", e);
-        }
+        try { await sessionAPI.uploadResume(session.session_id, resumeFile); }
+        catch (e) { console.warn("Resume upload failed (continuing):", e); }
       }
-
       window.location.href = `/interview/${session.session_id}`;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
@@ -284,9 +269,9 @@ export default function DashboardPage() {
   }
 
   const slideVariants = {
-    enter: (dir: number) => ({ opacity: 0, x: dir * 32 }),
+    enter:  (dir: number) => ({ opacity: 0, x: dir * 32 }),
     center: { opacity: 1, x: 0 },
-    exit:  (dir: number) => ({ opacity: 0, x: -dir * 32 }),
+    exit:   (dir: number) => ({ opacity: 0, x: -dir * 32 }),
   };
 
   return (
@@ -294,10 +279,10 @@ export default function DashboardPage() {
       <AmbientMesh domain={domain} />
 
       <main className="min-h-screen flex flex-col items-center pt-10 md:pt-14 pb-12 px-4">
-        
+
         {/* Step Indicator */}
         <div className="w-full max-w-2xl flex justify-end mb-8">
-           <StepBar step={step} />
+          <StepBar step={step} />
         </div>
 
         <div className="w-full max-w-2xl">
@@ -316,7 +301,6 @@ export default function DashboardPage() {
             )}
           </AnimatePresence>
 
-          {/* Steps */}
           <AnimatePresence mode="wait" custom={1}>
 
             {/* ── Step 1: Mode + Domain ──────────────────────────────────── */}
@@ -326,12 +310,8 @@ export default function DashboardPage() {
 
                 <div className="mb-8">
                   <span className="inline-block px-3 py-1 bg-indigo-500/10 text-indigo-500 rounded-full text-xs font-bold uppercase tracking-wider mb-4">Step 1 of 3 · Setup</span>
-                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">
-                    Choose your path
-                  </h1>
-                  <p className="text-lg text-[var(--muted-foreground)]">
-                    Select interview mode and domain to get started.
-                  </p>
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">Choose your path</h1>
+                  <p className="text-lg text-[var(--muted-foreground)]">Select interview mode and domain to get started.</p>
                 </div>
 
                 {/* Mode toggle */}
@@ -342,8 +322,7 @@ export default function DashboardPage() {
                       { id: "interview" as Mode, icon: "👔", title: "Mock Interview", desc: "Full board simulation. No hints." },
                       { id: "coach"     as Mode, icon: "💡", title: "AI Coach",       desc: "Guided practice with feedback." },
                     ].map((m) => (
-                      <Card key={m.id} onClick={() => setMode(m.id)} selected={mode === m.id}
-                        accentColor="#6366f1" className="p-5 border-none">
+                      <Card key={m.id} onClick={() => setMode(m.id)} selected={mode === m.id} accentColor="#6366f1" className="p-5 border-none">
                         <div className="relative z-10">
                           <div className="text-3xl mb-4">{m.icon}</div>
                           <div className="text-[17px] font-bold text-[var(--foreground)] mb-1">{m.title}</div>
@@ -366,26 +345,22 @@ export default function DashboardPage() {
                   <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-3 block">Interview Domain</label>
                   <div className="flex flex-col gap-4">
                     {DOMAINS.map((d) => (
-                      <Card key={d.id} onClick={() => setDomain(d.id)} selected={domain === d.id}
-                        accentColor={d.accent} className="p-5 border-none">
+                      <Card key={d.id} onClick={() => setDomain(d.id)} selected={domain === d.id} accentColor={d.accent} className="p-5 border-none">
                         <div className="relative z-10 flex items-center gap-5">
-                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
-                            style={{ background: d.accentBg }}>
+                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0" style={{ background: d.accentBg }}>
                             {d.icon}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-1.5">
                               <span className="text-lg font-black text-[var(--foreground)]">{d.label}</span>
-                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full"
-                                style={{ background: d.accentBg, color: d.accentText }}>
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: d.accentBg, color: d.accentText }}>
                                 {d.sub}
                               </span>
                             </div>
                             <p className="text-[15px] text-[var(--muted-foreground)] leading-relaxed">{d.desc}</p>
                           </div>
                           {domain === d.id && (
-                            <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
-                              style={{ background: d.accent, boxShadow: `0 4px 12px ${d.accent}66` }}>
+                            <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: d.accent, boxShadow: `0 4px 12px ${d.accent}66` }}>
                               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                               </svg>
@@ -421,12 +396,8 @@ export default function DashboardPage() {
 
                 <div className="mb-8">
                   <span className="inline-block px-3 py-1 bg-amber-500/10 text-amber-500 rounded-full text-xs font-bold uppercase tracking-wider mb-4">Step 2 of 3 · Profile</span>
-                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">
-                    Tell us about you
-                  </h1>
-                  <p className="text-lg text-[var(--muted-foreground)]">
-                    The AI panel uses this to personalise every question.
-                  </p>
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">Tell us about you</h1>
+                  <p className="text-lg text-[var(--muted-foreground)]">The AI panel uses this to personalise every question.</p>
                 </div>
 
                 <div className="p-8 mb-6 flex flex-col gap-6 rounded-3xl bg-[var(--card)] shadow-lg">
@@ -434,38 +405,30 @@ export default function DashboardPage() {
                   <Input label="Target Year" value={targetYear} onChange={setTargetYear} placeholder="e.g. 2026" optional />
                 </div>
 
-                {/* Focus Topic (Multiple Selection supported) */}
+                {/* Focus Topics */}
                 <motion.div key="topic" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-8">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-3 block">
-                    Focus Topics <span className={mode === "coach" ? "text-red-500" : "opacity-60 normal-case tracking-normal"}>{mode === "coach" ? "*" : "(Optional for Mock)"}</span>
+                    Focus Topics{" "}
+                    <span className={mode === "coach" ? "text-red-500" : "opacity-60 normal-case tracking-normal"}>
+                      {mode === "coach" ? "*" : "(Optional for Mock)"}
+                    </span>
                   </label>
                   <div className="p-6 rounded-3xl bg-[var(--card)] shadow-lg">
-                    
                     <div className="flex flex-wrap gap-2.5 mb-4">
-                      {/* Default list wale chips */}
                       {domain && TOPICS[domain].map((t) => (
                         <Chip key={t} label={t} selected={topics.includes(t)} onClick={() => toggleTopic(t)} />
                       ))}
-
-                      {/* Custom add kiye hue chips dikhane ke liye */}
                       {topics.filter((t) => domain && !TOPICS[domain].includes(t)).map((t) => (
                         <Chip key={t} label={t} selected={true} onClick={() => toggleTopic(t)} />
                       ))}
                     </div>
-
-                    {/* Custom Topic Input Box */}
                     <div className="pt-2 flex gap-2">
                       <input
                         type="text"
                         placeholder="Add a custom topic..."
                         value={customTopic}
                         onChange={(e) => setCustomTopic(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddCustomTopic();
-                          }
-                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCustomTopic(); } }}
                         className="w-full h-12 px-4 rounded-xl text-[14px] font-medium text-[var(--foreground)] border border-[var(--border)] outline-none transition-all duration-150 bg-transparent focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-[var(--muted-foreground)]/50"
                       />
                       <button
@@ -480,7 +443,7 @@ export default function DashboardPage() {
                   </div>
                 </motion.div>
 
-                {/* Resume (Only for Mock Interview) */}
+                {/* Resume */}
                 <AnimatePresence mode="wait">
                   {mode === "interview" && (
                     <motion.div key="resume" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-8 overflow-hidden">
@@ -494,15 +457,14 @@ export default function DashboardPage() {
                         onDragLeave={() => setIsDragging(false)}
                         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                         onDrop={(e) => {
-                          e.preventDefault();
-                          setIsDragging(false);
+                          e.preventDefault(); setIsDragging(false);
                           const f = e.dataTransfer.files?.[0];
                           if (f?.type === "application/pdf") setResumeFile(f);
                         }}
                         className="w-full rounded-3xl py-10 px-8 text-center transition-all duration-200 border-none outline-none cursor-pointer"
                         style={{
                           background:  isDragging ? "rgba(99,102,241,0.08)" : "var(--card)",
-                          boxShadow: isDragging ? "inset 0 0 0 2px rgba(99,102,241,0.4)" : "none"
+                          boxShadow: isDragging ? "inset 0 0 0 2px rgba(99,102,241,0.4)" : "none",
                         }}
                       >
                         {resumeFile ? (
@@ -565,15 +527,10 @@ export default function DashboardPage() {
 
                 <div className="mb-8">
                   <span className="inline-block px-3 py-1 bg-indigo-500/10 text-indigo-500 rounded-full text-xs font-bold uppercase tracking-wider mb-4">Step 3 of 3 · Configure</span>
-                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">
-                    Session settings
-                  </h1>
-                  <p className="text-lg text-[var(--muted-foreground)]">
-                    Fine-tune before entering the board room.
-                  </p>
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-3">Session settings</h1>
+                  <p className="text-lg text-[var(--muted-foreground)]">Fine-tune before entering the board room.</p>
                 </div>
 
-                {/* Settings grid */}
                 <div className="p-8 mb-6 rounded-3xl bg-[var(--card)] shadow-lg">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     {mode === "interview" && (
@@ -608,14 +565,13 @@ export default function DashboardPage() {
                       { k: "Mode",       v: mode === "interview" ? "Mock Interview" : "AI Coach" },
                       { k: "Name",       v: name },
                       ...(targetYear ? [{ k: "Target Year", v: targetYear }] : []),
-                      // Show combined topics if any exist
                       ...(topics.length > 0 ? [{ k: "Topics", v: topics.join(", ") }] : []),
-                      ...(resumeFile && mode === "interview" ? [{ k: "Resume",     v: resumeFile.name }] : []),
+                      ...(resumeFile && mode === "interview" ? [{ k: "Resume", v: resumeFile.name }] : []),
                       { k: "Difficulty", v: difficulty },
                       { k: "Language",   v: language },
                       ...(mode === "interview" ? [{ k: "Duration", v: `${durationMins} minutes` }] : []),
                     ].map(({ k, v }, index, arr) => (
-                      <div key={k} className={`flex items-center justify-between ${index !== arr.length -1 ? "pb-5 border-b border-[var(--border)]" : ""}`}>
+                      <div key={k} className={`flex items-center justify-between ${index !== arr.length - 1 ? "pb-5 border-b border-[var(--border)]" : ""}`}>
                         <span className="text-[15px] font-medium text-[var(--muted-foreground)]">{k}</span>
                         <span className="text-[16px] font-bold text-[var(--foreground)]">{v}</span>
                       </div>
@@ -630,7 +586,6 @@ export default function DashboardPage() {
                     </svg>
                     Back
                   </button>
-
                   <motion.button
                     whileHover={!submitting ? { y: -1, scale: 1.02 } : {}}
                     whileTap={!submitting ? { scale: 0.98 } : {}}
