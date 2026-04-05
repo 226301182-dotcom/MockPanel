@@ -1,6 +1,8 @@
 fastapi
 uvicorn[standard]
 pydantic-settings
+pydantic[email]
+email-validator
 python-dotenv
 httpx
 redis>=4.5.0
