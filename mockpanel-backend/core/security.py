@@ -1,11 +1,10 @@
 # core/security.py
 # ════════════════════════════════════════════════════════════════════════════════
 # PRODUCTION AUTH — bcrypt password hashing + JWT token lifecycle
-# No dev bypass. No mock user. Real security only.
+# FIX: Added truncate_base64=True to handle bcrypt 72-character limit.
 # ════════════════════════════════════════════════════════════════════════════════
 
 import re
-import time
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -24,10 +23,16 @@ ALGORITHM          = "HS256"
 ACCESS_TOKEN_DAYS  = 7          # Token valid for 7 days
 REFRESH_TOKEN_DAYS = 30         # Refresh token valid for 30 days
 
-pwd_context    = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme  = OAuth2PasswordBearer(
+# [FIX] truncate_base64=True prevents the "72 bytes" ValueError with newer bcrypt
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    truncate_base64=True 
+)
+
+oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="api/v1/auth/login",
-    auto_error=False,   # Returns None instead of 401 — we handle it ourselves
+    auto_error=False,
 )
 
 
@@ -42,7 +47,11 @@ def get_password_hash(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify plain password against stored bcrypt hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -50,10 +59,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ════════════════════════════════════════════════════════════════════════════════
 
 def create_access_token(data: dict) -> str:
-    """
-    Create a signed JWT access token.
-    Expires in ACCESS_TOKEN_DAYS days.
-    """
+    """Create a signed JWT access token."""
     to_encode = data.copy()
     expire    = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_DAYS)
     to_encode.update({
@@ -65,10 +71,7 @@ def create_access_token(data: dict) -> str:
 
 
 def verify_token(token: str) -> dict:
-    """
-    Verify and decode a JWT token.
-    Raises HTTPException on invalid, expired, or tampered tokens.
-    """
+    """Verify and decode a JWT token."""
     try:
         payload = jwt.decode(
             token,
@@ -89,7 +92,6 @@ def verify_token(token: str) -> dict:
         return payload
 
     except JWTError as e:
-        # Log for monitoring but don't expose details to client
         logger.warning("JWT verification failed: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -99,22 +101,11 @@ def verify_token(token: str) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# AUTH DEPENDENCY — used in all protected routes
+# AUTH DEPENDENCY
 # ════════════════════════════════════════════════════════════════════════════════
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """
-    FastAPI dependency for protected routes.
-    Usage: current_user: dict = Depends(get_current_user)
-
-    Returns the JWT payload dict:
-    {
-        "sub":   "uuid-string",   # user_id
-        "email": "user@email.com",
-        "exp":   <timestamp>,
-        "type":  "access"
-    }
-    """
+    """FastAPI dependency for protected routes."""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -125,7 +116,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# RATE LIMITING (Redis-based)
+# RATE LIMITING
 # ════════════════════════════════════════════════════════════════════════════════
 
 async def rate_limit_check(
@@ -133,11 +124,6 @@ async def rate_limit_check(
     user_id: str,
     limit:   int = 20,
 ) -> None:
-    """
-    Check if user has exceeded rate limit.
-    Raises HTTP 429 if limit exceeded.
-    Allows on Redis error (fail-open to avoid blocking legitimate users).
-    """
     try:
         from db.redis_client import redis_cache
         allowed = await redis_cache.rate_limit_check(user_id, limit)
@@ -157,17 +143,10 @@ async def rate_limit_check(
 # ════════════════════════════════════════════════════════════════════════════════
 
 def sanitize_input(text: Optional[str], max_len: int = 500) -> str:
-    """
-    Strip HTML tags and limit length.
-    Prevents XSS and prompt injection via user-controlled strings.
-    """
     if not text:
         return ""
-    # Remove HTML/script tags
     clean = re.sub(r'<[^>]+>', '', text)
-    # Remove null bytes
     clean = clean.replace('\x00', '')
-    # Limit length
     return clean[:max_len].strip()
 
 
@@ -176,7 +155,6 @@ def sanitize_input(text: Optional[str], max_len: int = 500) -> str:
 # ════════════════════════════════════════════════════════════════════════════════
 
 def get_client_ip(request: Request) -> str:
-    """Extract real client IP, respecting proxy headers."""
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
