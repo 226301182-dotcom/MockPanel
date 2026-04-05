@@ -11,9 +11,12 @@
 // ════════════════════════════════════════════════════════════════════════════════
 
 // ── Environment-driven URLs (set these in .env.local / Vercel dashboard) ─────
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000/api/v1";
+// lib/api.ts mein API_BASE ko aise rakho:
+
+const API_BASE = 
+  process.env.NEXT_PUBLIC_API_URL 
+    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "") // Render URL: https://...com
+    : "http://localhost:8000/api/v1";
 
 export const WS_BASE =
   process.env.NEXT_PUBLIC_WS_URL?.replace(/\/$/, "") ||

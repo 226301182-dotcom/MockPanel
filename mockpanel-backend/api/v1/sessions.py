@@ -21,7 +21,7 @@ from db.redis_client import redis_cache
 from db.supabase_client import get_global_supabase_client
 from core.security import sanitize_input, get_current_user, rate_limit_check
 
-router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
+router = APIRouter(tags=["sessions"])
 
 # PDF magic bytes — first 5 bytes of every valid PDF
 _PDF_MAGIC = b"%PDF-"

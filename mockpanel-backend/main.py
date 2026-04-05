@@ -27,7 +27,7 @@ app = FastAPI(
     debug=settings.debug
 )
 
-# 1️⃣ CORS middleware — Wildcard for testing to avoid 500/CORS mismatch
+# 1️⃣ CORS middleware — Wildcard for testing (Vercel aur Render ke beech jhagda khatam)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2️⃣ Logging middleware
+# 2️⃣ Logging middleware — Request track karne ke liye
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info(f"🚀 {request.method} {request.url}")
@@ -49,13 +49,19 @@ async def log_requests(request: Request, call_next):
         raise
 
 # --- INCLUDE ROUTERS ---
-# ⚠️ DHYAN DEIN: Agar router file ke andar pehle se prefix hai, toh yaha mat lagana.
-app.include_router(auth_router) # Ismein /api/v1/auth pehle se hai
 
-# Sessions router check: Agar sessions.py mein prefix="/api/v1/sessions" hai, 
-# toh yaha se prefix hata dena varna double ho jayega.
-app.include_router(sessions_router, prefix="/api/v1/sessions", tags=["sessions"])
+# ⚠️ DHYAN DEIN: Yahan se paths finalize ho rahe hain
 
+# 1. Auth: Ismein 'auth.py' ke andar pehle se "/api/v1/auth" hai.
+# Isse chhedne ki zaroorat nahi, ye login pass kar raha hai.
+app.include_router(auth_router) 
+
+# 2. Sessions: Frontend "/sessions" dhoond raha hai.
+# Yahan prefix="/sessions" de rahe hain. 
+# (NOTE: api/v1/sessions.py ke andar APIRouter ka prefix khali kar dena).
+app.include_router(sessions_router, prefix="/sessions", tags=["sessions"])
+
+# 3. Websockets:
 app.include_router(websockets_router, tags=["websockets"]) 
 
 @app.get("/")
@@ -77,4 +83,5 @@ def check_env():
 
 if __name__ == "__main__":
     import uvicorn
+    # Render handles this via Start Command, but good for local
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
