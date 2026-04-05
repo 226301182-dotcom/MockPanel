@@ -2,13 +2,13 @@
 
 // app/interview/[id]/page.tsx
 // ════════════════════════════════════════════════════════════════════════════════
-// PRODUCTION v15.0 — MODULAR ARCHITECTURE + FLAWLESS RESPONSIVE UI
+// PRODUCTION v17.0 — FULL LIGHT/DARK THEME SUPPORT RESTORED
 //
 // FIXES & UPDATES:
-//   [ARCHITECTURE] Merged user's modular component structure (AIAvatar, ControlButton).
-//   [UI FIX] Re-applied strict Flexbox layout to prevent ALL overlap issues.
-//   [CAPTIONS] Restored fixed-height, bottom-up auto-scrolling for captions.
-//   [DOCK] Maintained industry-standard hierarchy: Secondary -> Mic/Cam -> Action.
+//   [THEME FIX] Removed hardcoded hex colors (`#09090b`, `#18181b`). 
+//               Replaced them with responsive Tailwind `dark:` modifiers 
+//               so the Light Theme works perfectly again.
+//   [UI] Maintained the strict flexbox architecture and anti-overlap layout.
 // ════════════════════════════════════════════════════════════════════════════════
 
 import {
@@ -58,9 +58,9 @@ class InterviewErrorBoundary extends Component<{ children: ReactNode }, { hasErr
   componentDidCatch(error: Error, info: ErrorInfo) { console.error("Crash:", error, info); }
   render() {
     if (this.state.hasError) return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#09090b] px-6 text-center text-white">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-zinc-50 dark:bg-[#09090b] px-6 text-center text-zinc-900 dark:text-white">
         <div className="text-4xl">⚠️</div><h2 className="text-xl font-bold">Something went wrong</h2>
-        <p className="text-gray-400 max-w-sm text-sm">{this.state.error?.message}</p>
+        <p className="text-zinc-500 dark:text-gray-400 max-w-sm text-sm">{this.state.error?.message}</p>
         <button onClick={() => (window.location.href = "/dashboard")} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold">Back to Dashboard</button>
       </div>
     );
@@ -119,21 +119,20 @@ function useSilenceReminder(sendJson: (p: Record<string, unknown>) => void, chai
 // ════════════════════════════════════════════════════════════════════════════════
 
 const AIAvatar = memo(({ isThinking, isAudioPlaying }: { isThinking: boolean; isAudioPlaying: boolean }) => (
-  <div className="w-full h-full flex items-center justify-center bg-[#09090b] relative">
-    <div className={`relative w-36 h-36 sm:w-40 sm:h-40 md:w-56 md:h-56 rounded-full bg-[#18181b] flex items-center justify-center transition-all duration-500 ${
-      isThinking ? "shadow-[0_0_40px_rgba(99,102,241,0.2)] border border-indigo-500/40 scale-[1.02]" 
-      : isAudioPlaying ? "shadow-[0_0_50px_rgba(16,185,129,0.3)] border border-emerald-500/50 scale-[1.03]" 
-      : "border border-white/5"
+  <div className="w-full h-full flex items-center justify-center bg-zinc-50 dark:bg-[#09090b] relative">
+    <div className={`relative w-36 h-36 sm:w-40 sm:h-40 md:w-56 md:h-56 rounded-full bg-white dark:bg-[#18181b] shadow-md dark:shadow-none flex items-center justify-center transition-all duration-500 ${
+      isThinking ? "dark:shadow-[0_0_40px_rgba(99,102,241,0.2)] shadow-[0_0_30px_rgba(99,102,241,0.4)] border border-indigo-500/40 scale-[1.02]" 
+      : isAudioPlaying ? "dark:shadow-[0_0_50px_rgba(16,185,129,0.3)] shadow-[0_0_40px_rgba(16,185,129,0.5)] border border-emerald-500/50 scale-[1.03]" 
+      : "border border-zinc-200 dark:border-white/5"
     }`}>
       {isAudioPlaying && <div className="absolute inset-0 rounded-full border border-emerald-500/40 animate-ping opacity-30" />}
       {isThinking && <div className="absolute inset-0 rounded-full border border-indigo-500/40 animate-ping opacity-30" />}
-      <span className="text-4xl sm:text-5xl md:text-7xl font-bold text-white tracking-tight z-10">AI</span>
+      <span className="text-4xl sm:text-5xl md:text-7xl font-bold text-zinc-900 dark:text-white tracking-tight z-10">AI</span>
     </div>
   </div>
 ));
 AIAvatar.displayName = "AIAvatar";
 
-// Minimal SVG Icons (To replace external dependencies while matching Google Meet look)
 const Icons = {
   Question: () => <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   Captions: () => <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2" /><path d="M10 13H8a1 1 0 01-1-1v-2a1 1 0 011-1h2M16 13h-2a1 1 0 01-1-1v-2a1 1 0 011-1h2" /></svg>,
@@ -147,10 +146,14 @@ const Icons = {
 };
 
 const ControlButton = memo(({ onClick, active, icon: Icon, color = "default", title, disabled = false }: any) => {
-  const baseClass = "w-[44px] h-[44px] sm:w-[48px] sm:h-[48px] rounded-full flex items-center justify-center transition-all pointer-events-auto flex-shrink-0 shadow-lg";
+  const baseClass = "w-[44px] h-[44px] sm:w-[48px] sm:h-[48px] rounded-full flex items-center justify-center transition-all pointer-events-auto flex-shrink-0 shadow-md";
   const variants = {
-    default: active ? "bg-white/10 text-white border border-white/20" : "bg-[#18181b] border border-white/5 text-gray-400 hover:bg-white/10",
-    danger: active ? "bg-[#27272a] text-white border border-white/10" : "bg-[#dc2626] text-white border border-red-500",
+    default: active 
+      ? "bg-zinc-200 dark:bg-white/10 text-zinc-900 dark:text-white border border-zinc-300 dark:border-white/20" 
+      : "bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/5 text-zinc-500 dark:text-gray-400 hover:bg-zinc-100 dark:hover:bg-white/10",
+    danger: active 
+      ? "bg-zinc-200 dark:bg-[#27272a] text-zinc-900 dark:text-white border border-zinc-300 dark:border-white/10" 
+      : "bg-[#dc2626] text-white border border-red-500",
     end: "w-[50px] h-[44px] sm:w-[60px] sm:h-[48px] rounded-[1.2rem] bg-[#dc2626] hover:bg-red-700 text-white border border-red-500 ml-1"
   };
 
@@ -192,7 +195,7 @@ function InterviewRoomInner() {
   const [isThinking, setIsThinking] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   
-  const [isMicOn, setIsMicOn] = useState(true); // MIC DEFAULT ON
+  const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(false);
   
   const [showQuestion, setShowQuestion] = useState(true); 
@@ -343,9 +346,12 @@ function InterviewRoomInner() {
 
   // Auto Scroll Captions
   useEffect(() => {
-    if (captionsEndRef.current) {
-      captionsEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    const timeoutId = setTimeout(() => {
+      if (captionsEndRef.current) {
+        captionsEndRef.current.scrollIntoView({ behavior: "auto", block: "nearest" });
+      }
+    }, 10);
+    return () => clearTimeout(timeoutId);
   }, [displayCaptionsText, isThinking]);
 
   // PiP Dragging
@@ -383,19 +389,19 @@ function InterviewRoomInner() {
   const displayCaptionsColor = interimText ? "green" : captionsColor;
   const showCursorBlink = !!interimText;
 
-  const captionLabelClass = { green: "text-emerald-500", indigo: "text-indigo-400", amber: "text-amber-400" }[displayCaptionsColor];
+  const captionLabelClass = { green: "text-emerald-500", indigo: "text-indigo-500 dark:text-indigo-400", amber: "text-amber-500 dark:text-amber-400" }[displayCaptionsColor];
 
-  if (token === undefined) return <div className="min-h-screen flex items-center justify-center bg-[#09090b]"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (token === undefined) return <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-[#09090b]"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
 
   // ── USER PiP ──
   const UserView = (
-    <div className="w-full h-full bg-[#18181b] relative overflow-hidden flex items-center justify-center rounded-xl md:rounded-2xl">
+    <div className="w-full h-full bg-white dark:bg-[#18181b] relative overflow-hidden flex items-center justify-center rounded-xl md:rounded-2xl">
       {isCamOn && camAllowed === true ? (
         <video ref={userVideoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay playsInline muted />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#18181b]">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-[#09090b] flex items-center justify-center border border-white/5">
-            <span className="text-[10px] sm:text-[13px] font-bold text-blue-100/90 tracking-wide">YOU</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#18181b]">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-zinc-100 dark:bg-[#09090b] flex items-center justify-center border border-zinc-200 dark:border-white/5">
+            <span className="text-[10px] sm:text-[13px] font-bold text-blue-600 dark:text-blue-100/90 tracking-wide">YOU</span>
           </div>
         </div>
       )}
@@ -403,7 +409,7 @@ function InterviewRoomInner() {
   );
 
   return (
-    <main className="h-[100dvh] w-full bg-[#09090b] overflow-hidden relative font-sans flex flex-col" onClick={unlockAudio}>
+    <main className="h-[100dvh] w-full bg-zinc-50 dark:bg-[#09090b] overflow-hidden relative font-sans flex flex-col" onClick={unlockAudio}>
       
       {/* ── BACKGROUND LAYER (Video/AI) ── */}
       <div className="absolute inset-0 z-0">
@@ -415,8 +421,8 @@ function InterviewRoomInner() {
         <div
           onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
           style={{ transform: `translate(${pipPos.x}px, ${pipPos.y}px)` }}
-          className={`absolute top-0 left-0 w-24 sm:w-28 md:w-40 aspect-[3/4] rounded-xl md:rounded-2xl overflow-hidden shadow-2xl z-40 touch-none
-            ${isDragging ? "cursor-grabbing scale-105" : "cursor-grab hover:scale-[1.02]"} border border-white/5 bg-[#18181b] transition-transform`}
+          className={`absolute top-0 left-0 w-24 sm:w-28 md:w-40 aspect-[3/4] rounded-xl md:rounded-2xl overflow-hidden shadow-lg dark:shadow-2xl z-40 touch-none
+            ${isDragging ? "cursor-grabbing scale-105" : "cursor-grab hover:scale-[1.02]"} border border-zinc-200 dark:border-white/5 bg-white dark:bg-[#18181b] transition-transform`}
         >
           <div className="w-full h-full pointer-events-none">{!isUserFullScreen ? UserView : <AIAvatar isThinking={isThinking} isAudioPlaying={isAudioPlaying} />}</div>
         </div>
@@ -424,20 +430,17 @@ function InterviewRoomInner() {
 
       {/* ── HEADER ── */}
       <header className="w-full flex-none h-16 md:h-20 z-30 flex justify-between items-center px-4 md:px-5 pointer-events-none">
-        
-        {/* Left Side: Dot & Title */}
         <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto flex-1 min-w-0 mr-4">
           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          <h1 className="text-sm sm:text-[15px] font-bold text-white/95 tracking-wide truncate">
+          <h1 className="text-sm sm:text-[15px] font-bold text-zinc-900 dark:text-white/95 tracking-wide truncate">
             {domCfg.title.replace('\n', ' ')}
           </h1>
         </div>
 
-        {/* Right Side: Q Counter, Theme, Timer */}
         <div className="flex items-center gap-2 sm:gap-4 pointer-events-auto flex-shrink-0">
-          <span className="text-[11px] sm:text-[13px] font-semibold text-gray-500 hidden sm:block">Q{questionNumber}/15</span>
+          <span className="text-[11px] sm:text-[13px] font-semibold text-zinc-500 dark:text-gray-500 hidden sm:block">Q{questionNumber}/15</span>
           <ThemeToggle />
-          <div className="px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-[10px] sm:rounded-[12px] bg-[#18181b] border border-white/5 font-mono font-bold text-[11px] sm:text-[13px] text-white/90">
+          <div className="px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-[10px] sm:rounded-[12px] bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/5 font-mono font-bold text-[11px] sm:text-[13px] text-zinc-800 dark:text-white/90 shadow-sm dark:shadow-none">
             {formatTime(seconds)}
           </div>
         </div>
@@ -449,9 +452,9 @@ function InterviewRoomInner() {
         {/* TOP: Question Box */}
         {showQuestion && currentQuestion && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="w-full max-w-2xl mx-auto bg-[#18181b]/95 backdrop-blur-xl border border-white/10 p-3 sm:p-5 rounded-xl sm:rounded-2xl shadow-2xl text-center pointer-events-auto flex-shrink min-h-0 overflow-y-auto hide-scrollbar">
-            <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-bold mb-1.5 sm:mb-2 block text-gray-400">Current Question</span>
-            <p className="text-xs sm:text-sm md:text-base font-semibold text-white/95 leading-relaxed">"{currentQuestion}"</p>
+            className="w-full max-w-2xl mx-auto bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xl border border-zinc-200 dark:border-white/10 p-3 sm:p-5 rounded-xl sm:rounded-2xl shadow-lg dark:shadow-2xl text-center pointer-events-auto flex-shrink min-h-0 overflow-y-auto hide-scrollbar">
+            <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-bold mb-1.5 sm:mb-2 block text-zinc-500 dark:text-gray-400">Current Question</span>
+            <p className="text-xs sm:text-sm md:text-base font-semibold text-zinc-900 dark:text-white/95 leading-relaxed">"{currentQuestion}"</p>
           </motion.div>
         )}
 
@@ -460,8 +463,8 @@ function InterviewRoomInner() {
           
           <AnimatePresence>
             {statusMessage && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="self-center inline-flex items-center bg-[#18181b] px-3 py-1 sm:px-4 sm:py-1.5 rounded-full border border-amber-500/30 shadow-lg">
-                <span className="text-[9px] sm:text-[11px] font-bold text-amber-500 uppercase tracking-wider">{statusMessage}</span>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="self-center inline-flex items-center bg-white dark:bg-[#18181b] px-3 py-1 sm:px-4 sm:py-1.5 rounded-full border border-amber-300 dark:border-amber-500/30 shadow-md">
+                <span className="text-[9px] sm:text-[11px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider">{statusMessage}</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -469,17 +472,17 @@ function InterviewRoomInner() {
           <AnimatePresence>
             {showTextInput && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} 
-                className="w-full flex items-center gap-2 p-1.5 bg-[#18181b] border border-white/10 rounded-2xl shadow-xl">
+                className="w-full flex items-center gap-2 p-1.5 bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/10 rounded-2xl shadow-lg">
                 <input 
                   value={textInput} 
                   onChange={e => setTextInput(e.target.value)} 
                   onKeyDown={e => e.key === "Enter" && !e.shiftKey && submitTextInput()} 
                   placeholder="Type your answer…" 
-                  className="flex-1 bg-transparent px-3 py-2 text-white text-xs sm:text-sm outline-none placeholder:text-gray-500 min-w-0" 
+                  className="flex-1 bg-transparent px-3 py-2 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none placeholder:text-zinc-400 dark:placeholder:text-gray-500 min-w-0" 
                 />
                 <button 
                   onClick={submitTextInput} 
-                  className="bg-white text-black px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex-shrink-0 transition-transform active:scale-95">
+                  className="bg-indigo-600 dark:bg-white text-white dark:text-black px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex-shrink-0 transition-transform active:scale-95">
                   Send
                 </button>
               </motion.div>
@@ -489,18 +492,20 @@ function InterviewRoomInner() {
           <AnimatePresence>
             {showCaptions && (displayCaptionsText || isThinking) && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="w-full h-[5rem] sm:h-[6rem] bg-[#18181b]/95 backdrop-blur-xl border border-white/10 rounded-xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden flex-shrink-0 p-3 sm:p-4">
+                className="w-full h-[5rem] sm:h-[6rem] bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xl border border-zinc-200 dark:border-white/10 rounded-xl sm:rounded-2xl shadow-lg dark:shadow-2xl flex flex-col flex-shrink-0 p-3 sm:p-4">
                 
                 <span className={`text-[8px] sm:text-[10px] uppercase tracking-widest font-bold mb-1 sm:mb-1.5 flex-shrink-0 ${captionLabelClass}`}>
                   {displayCaptionsLabel}
                 </span>
 
-                <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col justify-end">
-                  <span className="text-white/90 text-xs sm:text-sm md:text-base font-medium leading-snug">
-                    {displayCaptionsText || (isThinking ? "…" : "")}
-                    {showCursorBlink && <span className="inline-block w-1 h-3 sm:h-3.5 ml-1 bg-emerald-500 animate-pulse align-middle" />}
-                  </span>
-                  <div ref={captionsEndRef} />
+                <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col pt-1">
+                  <div className="mt-auto flex flex-col w-full">
+                    <p className="text-zinc-800 dark:text-white/90 text-xs sm:text-sm md:text-base font-medium leading-snug break-words">
+                      {displayCaptionsText || (isThinking ? "…" : "")}
+                      {showCursorBlink && <span className="inline-block w-1 h-3 sm:h-3.5 ml-1 bg-emerald-500 animate-pulse align-middle" />}
+                    </p>
+                    <div ref={captionsEndRef} className="h-[1px] w-full flex-shrink-0" />
+                  </div>
                 </div>
                 
               </motion.div>
@@ -520,7 +525,7 @@ function InterviewRoomInner() {
 
           {/* MIC FIRST */}
           <div className="relative flex items-center justify-center flex-shrink-0" style={{ width: 'var(--mic-size, 44px)', height: 'var(--mic-size, 44px)' }}>
-            <button onClick={() => setIsMicOn(!isMicOn)} disabled={!!micError} className={`w-full h-full relative z-10 rounded-full flex items-center justify-center transition-all shadow-lg ${isMicOn && !micError ? "bg-[#27272a] text-white border border-white/10" : "bg-[#dc2626] text-white border border-red-500 disabled:opacity-50"}`} title="Toggle Mic">
+            <button onClick={() => setIsMicOn(!isMicOn)} disabled={!!micError} className={`w-full h-full relative z-10 rounded-full flex items-center justify-center transition-all shadow-md ${isMicOn && !micError ? "bg-zinc-200 dark:bg-[#27272a] text-zinc-900 dark:text-white border border-zinc-300 dark:border-white/10" : "bg-[#dc2626] text-white border border-red-500 disabled:opacity-50"}`} title="Toggle Mic">
               {isMicOn && !micError ? <Icons.MicOn /> : <Icons.MicOff />}
             </button>
           </div>
