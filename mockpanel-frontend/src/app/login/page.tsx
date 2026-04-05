@@ -119,7 +119,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const endpoint = mode === "login" ? "/auth/login" : "/auth/signup";
+    const endpoint = mode === "login" ? "/api/v1/auth/login" : "/api/v1/auth/signup";
     const body     = mode === "login"
       ? { email, password }
       : { email, password, name: name.trim() };

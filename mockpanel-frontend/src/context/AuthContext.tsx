@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Then validate with backend
       try {
         const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-        const res = await fetch(`${API}/auth/me`, {
+        const res = await fetch(`${API}/api/v1/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 

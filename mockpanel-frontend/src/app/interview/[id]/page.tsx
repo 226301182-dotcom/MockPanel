@@ -174,13 +174,19 @@ function InterviewRoomInner() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
   useEffect(() => { setToken(readToken()); }, []);
 
-  const wsUrl = useMemo(() => {
-    if (typeof window === "undefined" || token === undefined) return null;
-    const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-    const wsHost  = isLocal ? "localhost:8000" : window.location.host;
-    const proto   = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${wsHost}/ws/v1/interview/${sessionId}`;
-  }, [sessionId, token]);
+  // ✅ Naya WebSocket URL Logic:
+const wsUrl = useMemo(() => {
+  if (typeof window === "undefined" || token === undefined) return null;
+
+  // Render backend ka URL lo (Vercel Env Var se)
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  
+  // http ko ws mein badlo
+  const wsBase = apiBase.replace(/^http/, "ws");
+  
+  // Final WebSocket address (no need for window.location.host here)
+  return `${wsBase}/ws/v1/interview/${sessionId}`;
+}, [sessionId, token]);
 
   const { status, messages, sendJson, stopAudio, isAudioPlaying } = useWebSocket(wsUrl, token ?? null);
 
