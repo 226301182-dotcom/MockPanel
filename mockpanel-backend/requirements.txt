@@ -7,6 +7,10 @@ redis>=4.5.0
 PyMuPDF
 supabase
 google-generativeai
+google-genai
 anthropic
 arq>=0.25.0
-
+groq
+openai
+python-jose[cryptography]
+passlib[bcrypt]
