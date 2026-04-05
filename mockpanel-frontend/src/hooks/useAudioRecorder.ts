@@ -1,19 +1,14 @@
 // hooks/useAudioRecorder.ts
 // ════════════════════════════════════════════════════════════════════════════════
-// PRODUCTION v6.0 — SMOOTH VOICE + INSTANT DISPLAY
+// PRODUCTION v18.0 — NLP KEYWORD BARGE-IN (NO MORE ACCIDENTAL CUT-OFFS)
 //
-// FIXES vs v5.0:
-//   [F-1]  Single consolidated displayText ref — no React state lag for captions.
-//          onInterim fires directly, bypassing re-render queue.
-//   [F-2]  Recognition language: "en-IN" primary, auto-retry with "en-US" on error.
-//   [F-3]  Silence timeout reduced: 1200ms (was 1500ms) — feels more responsive.
-//   [F-4]  Barge-in reset reduced: 1200ms (was 2000ms) — quicker re-arm.
-//   [F-5]  maxAlternatives = 1 explicitly set — no wasted processing.
-//   [F-6]  Recognition restart is immediate (50ms vs 100ms) — mic gap eliminated.
-//   [F-7]  onFinal fires BEFORE sendJson — UI updates instantly, then network call.
-//   [F-8]  interimText accumulates across result chunks — no word drops mid-sentence.
-//   [F-9]  NORMAL_THRESHOLD lowered to 10 — softer voices captured correctly.
-//   [F-10] Explicit abort() on cleanup (not just stop()) — Chrome memory leak fix.
+// FIXES & UPDATES:
+//   [VAD FIX] Removed pure volume-based interruption. Laptop speakers were 
+//             causing an "echo loop" which falsely triggered the AI to stop.
+//   [NLP INTERRUPT] The AI will now ONLY stop if you explicitly say "Stop", 
+//                   "Wait", "Excuse me", "Okay", or "Ruko". 
+//   [ECHO REJECTION] While the AI is speaking, random noise and echo are ignored
+//                    so the question can finish completely without breaking flow.
 // ════════════════════════════════════════════════════════════════════════════════
 
 import { useState, useRef, useEffect } from "react";
@@ -28,11 +23,11 @@ export interface UseAudioRecorderOptions {
   onFinal?: (text: string) => void;
 }
 
-// ── Thresholds ─────────────────────────────────────────────────────────────────
-const NORMAL_THRESHOLD          = 10;   // [F-9] Softer voices captured
-const BARGE_IN_THRESHOLD        = 32;   // AI speaking — needs deliberate voice
-const SILENCE_TIMEOUT_MS        = 1200; // [F-3] Faster auto-submit
-const RECOGNITION_RESTART_MS    = 50;   // [F-6] Near-zero mic gap
+const SILENCE_TIMEOUT_MS     = 2500; // 2.5s gives you time to think
+const RECOGNITION_RESTART_MS = 50;   
+
+// Keywords that will actually stop the AI
+const INTERRUPT_KEYWORDS = ["stop", "wait", "hold on", "excuse me", "okay", "ok", "one second", "ruko"];
 
 export function useAudioRecorder(
   sendJson: SendJson,
@@ -51,9 +46,8 @@ export function useAudioRecorder(
   const latestInterimRef  = useRef<string>("");
   const bargeInFiredRef   = useRef(false);
   const enabledRef        = useRef(enabled);
-  // [F-8] Accumulate interim across chunks
-  const accumulatedInterimRef = useRef<string>("");
 
+  // Sync refs with state
   useEffect(() => { isAudioPlayingRef.current = isAudioPlaying; }, [isAudioPlaying]);
   useEffect(() => { onInterruptRef.current    = onInterrupt;    }, [onInterrupt]);
   useEffect(() => { onInterimRef.current      = onInterim;      }, [onInterim]);
@@ -63,7 +57,7 @@ export function useAudioRecorder(
   useEffect(() => {
     if (!enabled) {
       if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (_) {} // [F-10]
+        try { recognitionRef.current.abort(); } catch (_) {} 
         recognitionRef.current = null;
       }
       if (interimTimeoutRef.current) clearTimeout(interimTimeoutRef.current);
@@ -72,55 +66,19 @@ export function useAudioRecorder(
       return;
     }
 
-    let cancelled  = false;
-    let audioCtx:  AudioContext | null = null;
-    let rafId:     number = 0;
-    let micStream: MediaStream | null = null;
-
-    // ── Step 1: Mic stream for VAD ─────────────────────────────────────────────
-    navigator.mediaDevices
-      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    let cancelled = false;
+    
+    // Setup basic Mic stream just for the UI visualizer (Volume calculation removed)
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
       .then((s) => {
         if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
-
-        micStream = s;
         setStream(s);
-
-        const AC = window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        audioCtx = new AC();
-        const analyser = audioCtx.createAnalyser();
-        audioCtx.createMediaStreamSource(s).connect(analyser);
-        analyser.fftSize = 256;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const checkVolume = () => {
-          if (cancelled) return;
-          analyser.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-          const volume = sum / dataArray.length;
-
-          if (isAudioPlayingRef.current && volume > BARGE_IN_THRESHOLD) {
-            if (!bargeInFiredRef.current) {
-              bargeInFiredRef.current = true;
-              onInterruptRef.current?.();
-              setTimeout(() => { bargeInFiredRef.current = false; }, 1200); // [F-4]
-            }
-          }
-          rafId = requestAnimationFrame(checkVolume);
-        };
-        checkVolume();
       })
       .catch(() => {
-        if (!cancelled) setMicError("Microphone access denied. Please allow mic access and reload.");
+        if (!cancelled) setMicError("Microphone access denied. Please allow mic access.");
       });
 
-    // ── Step 2: Web Speech API ─────────────────────────────────────────────────
-    const SpeechRecognition =
-      (window as any).webkitSpeechRecognition ||
-      (window as any).SpeechRecognition;
-
+    const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     if (!SpeechRecognition) {
       setMicError("Web Speech API not supported. Please use Google Chrome.");
       return;
@@ -132,31 +90,20 @@ export function useAudioRecorder(
       const recognition = new SpeechRecognition();
       recognition.continuous      = true;
       recognition.interimResults  = true;
-      recognition.maxAlternatives = 1; // [F-5]
+      recognition.maxAlternatives = 1; 
       recognition.lang            = lang;
+      recognitionRef.current      = recognition;
 
-      recognitionRef.current = recognition;
-
-      // [F-7] UI first, then network
       const flushFinalText = (text: string) => {
         const trimmed = text.trim();
         if (!trimmed) return;
-
-        if (interimTimeoutRef.current) {
-          clearTimeout(interimTimeoutRef.current);
-          interimTimeoutRef.current = null;
-        }
-
-        accumulatedInterimRef.current = "";
-        latestInterimRef.current      = "";
-
-        onFinalRef.current?.(trimmed);           // [F-7] UI first
-        sendJson({ type: "text", text: trimmed }); // then network
+        if (interimTimeoutRef.current) clearTimeout(interimTimeoutRef.current);
+        latestInterimRef.current = "";
+        onFinalRef.current?.(trimmed);           
+        sendJson({ type: "text", text: trimmed }); 
       };
 
-      recognition.onstart = () => {
-        if (!cancelled) setIsRecording(true);
-      };
+      recognition.onstart = () => { if (!cancelled) setIsRecording(true); };
 
       recognition.onresult = (event: any) => {
         if (cancelled) return;
@@ -164,25 +111,38 @@ export function useAudioRecorder(
         let interimText = "";
         let finalText   = "";
 
-        // [F-8] Rebuild full interim from ALL results (not just new ones)
         for (let i = 0; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            finalText += event.results[i][0].transcript;
-          } else {
-            interimText += event.results[i][0].transcript;
-          }
+          if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
+          else interimText += event.results[i][0].transcript;
         }
 
+        const currentSpoken = (finalText || interimText).toLowerCase();
+
+        // ── MAGIC FIX: NLP SMART INTERRUPT & ECHO REJECTION ──
+        if (isAudioPlayingRef.current) {
+            // Check if user spoke a designated interrupt word
+            const isInterruptWord = INTERRUPT_KEYWORDS.some(kw => currentSpoken.includes(kw));
+            
+            if (isInterruptWord && !bargeInFiredRef.current) {
+                bargeInFiredRef.current = true;
+                onInterruptRef.current?.();
+                setTimeout(() => { bargeInFiredRef.current = false; }, 2000);
+                try { recognition.stop(); } catch (_) {}
+            }
+            // Ignore all other text while AI is speaking (Prevents echo from bleeding into script)
+            return; 
+        }
+
+        // ── NORMAL PROCESSING (When AI is quiet) ──
         if (finalText.trim()) {
-          accumulatedInterimRef.current = "";
           flushFinalText(finalText);
+          try { recognition.stop(); } catch (_) {}
           return;
         }
 
         if (interimText.trim()) {
-          accumulatedInterimRef.current = interimText;
-          latestInterimRef.current      = interimText;
-          onInterimRef.current?.(interimText.trim()); // [F-1] Direct, no delay
+          latestInterimRef.current = interimText;
+          onInterimRef.current?.(interimText.trim()); 
 
           if (interimTimeoutRef.current) clearTimeout(interimTimeoutRef.current);
           interimTimeoutRef.current = setTimeout(() => {
@@ -191,27 +151,20 @@ export function useAudioRecorder(
               flushFinalText(pending);
               try { recognition.stop(); } catch (_) {}
             }
-          }, SILENCE_TIMEOUT_MS); // [F-3]
+          }, SILENCE_TIMEOUT_MS); 
         }
       };
 
       recognition.onerror = (e: any) => {
-        // [F-2] If language error, retry with en-US
         if (e.error === "language-not-supported") {
           try { recognition.abort(); } catch (_) {}
           setTimeout(() => startRecognition("en-US"), 100);
           return;
         }
-        if (e.error === "no-speech" || e.error === "aborted") return;
-        console.warn("[AudioRecorder] Speech error:", e.error);
       };
 
       recognition.onend = () => {
-        if (cancelled || !enabledRef.current) {
-          setIsRecording(false);
-          return;
-        }
-        // [F-6] Near-instant restart
+        if (cancelled || !enabledRef.current) { setIsRecording(false); return; }
         setTimeout(() => {
           if (!cancelled && enabledRef.current) {
             try { recognition.start(); } catch (_) {}
@@ -219,23 +172,18 @@ export function useAudioRecorder(
         }, RECOGNITION_RESTART_MS);
       };
 
-      try { recognition.start(); } catch (e) {
-        console.error("[AudioRecorder] Start failed:", e);
-      }
+      try { recognition.start(); } catch (e) {}
     };
 
-    startRecognition("en-IN"); // [F-2] Start with Indian English
+    startRecognition("en-IN"); 
 
     return () => {
       cancelled = true;
-      if (rafId) cancelAnimationFrame(rafId);
-      if (audioCtx) audioCtx.close().catch(() => {});
       if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (_) {} // [F-10]
+        try { recognitionRef.current.abort(); } catch (_) {} 
         recognitionRef.current = null;
       }
       if (interimTimeoutRef.current) clearTimeout(interimTimeoutRef.current);
-      micStream?.getTracks().forEach(t => t.stop());
       setIsRecording(false);
       setStream(null);
     };
