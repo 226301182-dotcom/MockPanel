@@ -29,7 +29,7 @@ const FEATURES = [
   { icon: <svg viewBox="0 0 16 16" fill="none" className="w-[15px] h-[15px] flex-shrink-0"><path d="M8 2v4M8 10v4M2 8h4M10 8h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/></svg>, text: "Adaptive follow-up questions, just like a real board" },
 ];
 
-// ── Accordion Row (Hover Logic Added) ─────────────────────────────────────────
+// ── Accordion Row ─────────────────────────────────────────────────────────────
 function PillarRow({ 
   pillar, 
   isOpen, 
@@ -45,14 +45,14 @@ function PillarRow({
 }) {
   return (
     <div 
-      className="border-b border-[var(--border)] last:border-b-0"
-      onMouseEnter={onMouseEnter} /* माउस आने पर खुलेगा */
-      onMouseLeave={onMouseLeave} /* माउस हटने पर बंद होगा */
+      className="border-b border-[var(--border)] last:border-b-0 relative bg-[var(--background)] z-20"
+      onMouseEnter={onMouseEnter} 
+      onMouseLeave={onMouseLeave} 
     >
       <button
-        onClick={onClick} /* मोबाइल यूज़र्स के लिए क्लिक भी सपोर्ट करेगा */
+        onClick={onClick} 
         className="w-full flex items-center gap-4 py-3.5 px-2 rounded-lg text-left
-                   hover:bg-indigo-500/[0.04] transition-colors group cursor-pointer"
+                   hover:bg-indigo-500/[0.04] transition-colors group cursor-pointer outline-none"
       >
         <span className="text-[14px] font-semibold text-[var(--muted-foreground)] tabular-nums min-w-[26px]">
           {pillar.num}
@@ -116,7 +116,7 @@ function EvalPillarsCard() {
   const visiblePillars = expanded ? PILLARS : PILLARS.slice(0, VISIBLE_COUNT);
 
   return (
-    <div className="lg:pl-8 pt-2"> 
+    <div className="lg:pl-8 pt-2 relative z-10 bg-[var(--background)]"> 
       {/* Header */}
       <div className="flex items-center justify-between mb-4"> 
         <div className="flex items-center gap-2">
@@ -139,17 +139,17 @@ function EvalPillarsCard() {
         </span>
       </h2>
 
-      {/* List + fade */}
-      <div className="relative">
-        <div onMouseLeave={() => setOpenIndex(null)}> {/* पूरे लिस्ट से बाहर जाने पर भी बंद हो जाएगा */}
+      {/* List + Fade Gradient */}
+      <div className="relative z-10">
+        <div onMouseLeave={() => setOpenIndex(null)}>
           {visiblePillars.map((pillar, i) => (
             <PillarRow
               key={pillar.num}
               pillar={pillar}
               isOpen={openIndex === i}
-              onMouseEnter={() => setOpenIndex(i)}   /* Hover in */
-              onMouseLeave={() => setOpenIndex(null)} /* Hover out */
-              onClick={() => toggle(i)}              /* Mobile Click */
+              onMouseEnter={() => setOpenIndex(i)}   
+              onMouseLeave={() => setOpenIndex(null)} 
+              onClick={() => toggle(i)}              
             />
           ))}
         </div>
@@ -161,21 +161,21 @@ function EvalPillarsCard() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.35 }}
-              className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none
+              className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none z-30
                          bg-gradient-to-t from-[var(--background)] via-[var(--background)]/90 to-transparent"
             />
           )}
         </AnimatePresence>
       </div>
 
-      {/* Expand / collapse */}
-      <div className="mt-5 flex justify-center pb-2"> 
+      {/* Expand / collapse Button */}
+      <div className="mt-5 flex justify-center pb-2 relative z-40"> 
         <button
           onClick={() => { setExpanded(!expanded); if (expanded) setOpenIndex(null); }}
-          className="flex items-center gap-2 text-[14px] font-semibold
+          className="flex items-center justify-center gap-2 text-[14px] font-semibold whitespace-nowrap
                      text-[var(--foreground)] border border-[var(--border)]
-                     bg-[var(--muted)] hover:border-indigo-500/40 hover:text-indigo-500
-                     px-5 py-2.5 rounded-full transition-all group cursor-pointer"
+                     bg-[var(--background)] hover:border-indigo-500/40 hover:text-indigo-500
+                     px-6 py-3 rounded-full transition-all group cursor-pointer shadow-sm"
         >
           {expanded ? "Show less" : "View all 10 pillars"}
           <motion.svg
@@ -193,23 +193,46 @@ function EvalPillarsCard() {
   );
 }
 
+// ── Ambient Background ────────────────────────────────────────────────────────
+function AmbientMesh({ domain }: { domain: Domain | null }) {
+  const color = domain === "upsc" ? "#f59e0b" : domain === "psu" ? "#10b981" : "#6366f1";
+  return (
+    <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+      <div style={{ background: "var(--background)" }} className="absolute inset-0 transition-colors duration-300" />
+      <motion.div
+        animate={{ background: `radial-gradient(ellipse 80% 60% at 20% 0%, ${color}0d 0%, transparent 70%)` }}
+        transition={{ duration: 1.2, ease: "easeOut" }}
+        className="absolute inset-0"
+      />
+      <div className="absolute inset-0"
+        style={{ background: "radial-gradient(ellipse 60% 50% at 80% 100%, rgba(99,102,241,0.06) 0%, transparent 70%)" }}
+      />
+      <div className="absolute inset-0 opacity-[0.025]"
+        style={{ backgroundImage: "linear-gradient(rgba(120,120,120,.15) 1px, transparent 1px), linear-gradient(90deg, rgba(120,120,120,.15) 1px, transparent 1px)", backgroundSize: "60px 60px" }}
+      />
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Home() {
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[var(--background)]">
+      <AmbientMesh domain={null} />
+      
       <section className="max-w-7xl mx-auto px-6 pt-12 md:pt-20 pb-16 
                           grid lg:grid-cols-[45%_50%] gap-12 items-start min-h-[85vh]"> 
 
-        {/* LEFT */}
+        {/* LEFT COLUMN - Sticky Fixed */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6 }}
-          className="sticky top-24" 
+          className="relative lg:sticky lg:top-32 z-20 bg-[var(--background)] lg:bg-transparent pb-8 lg:pb-0" 
         >
           <span className="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20
                            text-indigo-500 text-[11px] font-bold uppercase tracking-widest
-                           mb-5 inline-block cursor-default"> 
+                           mb-5 inline-block cursor-default whitespace-nowrap"> 
             Elite AI Interview Board
           </span>
 
@@ -241,33 +264,38 @@ export default function Home() {
             ))}
           </ul>
 
-          {/* CTAs */}
+          {/* CTAs - Buttons Fixed */}
           <div className="flex flex-wrap gap-4">
-            <Link href="/dashboard" className="mp-btn-primary px-7 py-3.5 text-[15px] cursor-pointer">
+            <Link 
+              href="/dashboard" 
+              className="mp-btn-primary px-7 py-3.5 text-[15px] cursor-pointer inline-flex items-center justify-center whitespace-nowrap"
+            >
               Take Mock Interview
             </Link>
             <Link
               href="/dashboard"
               className="px-7 py-3.5 rounded-xl border border-[var(--border)]
-                         font-semibold hover:bg-[var(--muted)] transition-all text-[15px] cursor-pointer"
+                         font-semibold hover:bg-[var(--muted)] transition-all text-[15px] 
+                         cursor-pointer inline-flex items-center justify-center whitespace-nowrap bg-[var(--background)]"
             >
               AI Coach
             </Link>
           </div>
         </motion.div>
 
-        {/* RIGHT */}
+        {/* RIGHT COLUMN */}
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.15, duration: 0.5 }}
+          className="relative z-10"
         >
           <EvalPillarsCard />
         </motion.div>
       </section>
 
       {/* Goal Selector */}
-      <section className="max-w-7xl mx-auto px-6 py-20 border-t border-[var(--border)]">
+      <section className="max-w-7xl mx-auto px-6 py-20 border-t border-[var(--border)] relative z-10 bg-[var(--background)]">
         <p className="text-center text-[11px] font-bold text-[var(--muted-foreground)]
                       uppercase tracking-[0.2em] mb-12">
           Select Your Path
@@ -279,7 +307,7 @@ export default function Home() {
             { title: "FAANG SDE Rounds",    desc: "System Design and Behavioral drills for Big Tech.",    icon: "⚡" },
           ].map((goal) => (
             <Link href="/dashboard" key={goal.title}
-              className="mp-card p-8 hover:-translate-y-1 transition-all group cursor-pointer">
+              className="mp-card p-8 hover:-translate-y-1 transition-all group cursor-pointer bg-[var(--card)]">
               <div className="text-4xl mb-6 grayscale group-hover:grayscale-0 transition-all">{goal.icon}</div>
               <h4 className="font-bold text-xl mb-2">{goal.title}</h4>
               <p className="text-[15px] text-[var(--text-secondary)] leading-relaxed">{goal.desc}</p>
@@ -288,14 +316,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="max-w-4xl mx-auto px-6 py-24 text-center">
-        <div className="mp-card p-16 bg-gradient-to-b from-transparent to-indigo-500/5">
-          <h2 className="text-4xl font-black mb-4">Ready to enter the room?</h2>
-          <p className="text-[var(--text-secondary)] mb-10 text-lg">
+      {/* CTA Bottom - Button Fixed */}
+      {/* CTA Bottom - Button Fixed */}
+      <section className="max-w-4xl mx-auto px-6 py-16 md:py-24 text-center relative z-10 bg-[var(--background)]">
+        <div className="mp-card p-8 md:p-16 bg-gradient-to-b from-transparent to-indigo-500/5 overflow-hidden mx-auto max-w-[90%] sm:max-w-none">
+          <h2 className="text-3xl md:text-4xl font-black mb-4">Ready to enter the room?</h2>
+          <p className="text-[var(--text-secondary)] mb-8 md:mb-10 text-base md:text-lg">
             Your personalized session starts in 60 seconds.
           </p>
-          <Link href="/dashboard" className="mp-btn-primary px-10 py-4 text-lg cursor-pointer">
+          <Link 
+            href="/dashboard" 
+            className="mp-btn-primary px-6 md:px-10 py-3.5 md:py-4 text-[15px] md:text-lg cursor-pointer inline-flex items-center justify-center whitespace-nowrap w-full sm:w-auto"
+          >
             Start Free Session
           </Link>
         </div>

@@ -1,20 +1,12 @@
-# api/v1/websockets.py
+# api/v1/websockets.py — FINAL v3.0
 # ════════════════════════════════════════════════════════════════════════════════
-# PRODUCTION FIXES:
-#   [WB-1]  Emergency token bypass REMOVED. Production uses real JWT only.
-#           Dev mode: set BYPASS_AUTH=true in .env to allow token-less access.
-#           Never deploy with BYPASS_AUTH=true.
-#   [WB-2]  AudioService() instantiated ONCE per WS session (not per message).
-#           Prevents connection pool exhaustion under load.
-#   [WB-3]  mime_type forwarded from audio_chunk to stt_stream() so audio_service
-#           gets the correct Content-Type hint (critical for Safari/iOS MP4).
-#   [WB-4]  Audio format validation extended: now accepts WebM, OGG, MP4, AAC, WAV.
-#   [WB-5]  [FIX-15] resume_context passed ONCE to llm_service — NOT appended to
-#           every user message turn. Resume is in system prompt only.
-#   [WB-6]  [FIX-16] First-turn opener does NOT repeat resume context.
-#   [WB-7]  TTS sender worker loop: audio sent in correct time order.
-#           audio_queue.join() ensures all TTS tasks finish before response_complete.
-#   [WB-8]  safe_send helper de-duplicated — defined once, used everywhere.
+# FIXES:
+#   [WB-1]  voice_change handler — cycles to next panel speaker, sends confirmation
+#   [WB-2]  [System] messages — NOT saved to DB, NOT added to history
+#           (silence reminders are ephemeral — keeps history clean)
+#   [WB-3]  generate_and_send_response gets is_system flag — skips DB save
+#   [WB-4]  response_complete sent AFTER audio queue drains (no early trigger)
+#   [WB-5]  MIN_TTS_CHARS = 4 — avoids TTS pops on tiny fragments
 # ════════════════════════════════════════════════════════════════════════════════
 
 import logging
@@ -24,12 +16,12 @@ import asyncio
 import re
 import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from services.llm_service import llm_service
+from services.llm_service   import llm_service
 from services.audio_service import AudioService
-from db.redis_client import redis_cache
-from db.supabase_client import get_supabase_service_client
-from core.panel_config import PANEL_PROFILES, get_chairman_name, get_speaker_voices
-from core.security import verify_token
+from db.redis_client        import redis_cache
+from db.supabase_client     import get_supabase_service_client
+from core.panel_config      import PANEL_PROFILES, get_chairman_name, get_speaker_voices
+from core.security          import verify_token
 from workers.analytics_worker import enqueue_analytics_generation
 
 router = APIRouter(tags=["ws"])
@@ -38,9 +30,11 @@ logger = logging.getLogger("uvicorn")
 MAX_HISTORY_TURNS   = 12
 MAX_CHARS_PER_TURN  = 800
 SILENCE_MIN_LENGTH  = 2
+MIN_TTS_CHARS       = 4          # [WB-5] skip tiny TTS fragments
 SPEAKER_TAG_PATTERN = re.compile(r'\[([A-Za-z][A-Za-z .]{1,24})\]')
 PAUSE_PATTERN       = re.compile(r'(?<=[.?!])\s+(?=[A-Z])')
 STAGE_DIR_PATTERN   = re.compile(r'\[.*?\]')
+SYSTEM_MSG_PATTERN  = re.compile(r'^\[System\]', re.IGNORECASE)
 OVERLAP_SIZE        = 25
 
 
@@ -80,69 +74,50 @@ async def db_get_messages(client, session_id: str) -> list[dict]:
 # HISTORY MANAGEMENT
 # ════════════════════════════════════════════════════════════════════════════════
 
-def _trim_message_content(content: str) -> str:
+def _trim(content: str) -> str:
     return content[:MAX_CHARS_PER_TURN] if len(content) > MAX_CHARS_PER_TURN else content
 
 
 def build_active_history(full_history: list[dict]) -> list[dict]:
-    window = full_history[-MAX_HISTORY_TURNS:]
     return [
-        {"role": m["role"], "content": _trim_message_content(m.get("content", ""))}
-        for m in window
+        {"role": m["role"], "content": _trim(m.get("content", ""))}
+        for m in full_history[-MAX_HISTORY_TURNS:]
     ]
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# RESUME CONTEXT BUILDER
-# [WB-5] Called ONCE per session — injected into system prompt via llm_service.
-#        NEVER appended to individual user message turns.
+# RESUME CONTEXT
 # ════════════════════════════════════════════════════════════════════════════════
 
 async def build_resume_context(session_id: str) -> str:
     resume_text = await redis_cache.get_resume_text(session_id)
     if not resume_text or not resume_text.strip():
         return ""
-
     trimmed     = resume_text[:3000].strip()
     last_period = max(trimmed.rfind('.'), trimmed.rfind('\n'))
     if last_period > 2000:
         trimmed = trimmed[:last_period + 1]
-
     return trimmed
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TOKEN VERIFICATION
-# [WB-1] Emergency bypass removed.
-#        Set BYPASS_AUTH=true in .env ONLY for local development.
-#        This variable must NEVER be set in production deployments.
 # ════════════════════════════════════════════════════════════════════════════════
 
 _BYPASS_AUTH = os.getenv("BYPASS_AUTH", "false").lower() == "true"
 if _BYPASS_AUTH:
-    logger.warning(
-        "⚠️  BYPASS_AUTH=true — Token verification disabled. "
-        "This must NEVER be used in production!"
-    )
+    logger.warning("⚠️  BYPASS_AUTH=true — NEVER use in production!")
 
 
 def _verify_ws_token(token: str | None) -> dict | None:
-    """
-    Verify JWT token. Returns payload dict on success, None on failure.
-
-    BYPASS_AUTH=true: allowed only in development — returns a fixed guest payload.
-    """
     if _BYPASS_AUTH:
         return {"sub": "00000000-0000-0000-0000-000000000000", "dev": True}
-
     if not token:
-        logger.warning("⚠️ WS connection rejected: no token provided")
         return None
-
     try:
         return verify_token(token)
     except Exception as e:
-        logger.warning("⚠️ WS connection rejected: invalid token — %s", e)
+        logger.warning("⚠️ WS rejected: %s", e)
         return None
 
 
@@ -154,27 +129,28 @@ async def notify_silence(ws: WebSocket, chairman_name: str) -> None:
     try:
         await ws.send_json({
             "type":    "silence_detected",
-            "message": f"[{chairman_name}] I didn't catch that. Please speak clearly.",
+            "message": f"[{chairman_name}] Please speak clearly. We didn't catch that.",
         })
     except Exception:
         pass
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TTS HELPERS (CONCURRENT PIPELINE)
+# TTS HELPERS
 # ════════════════════════════════════════════════════════════════════════════════
 
 async def fetch_tts_audio(
-    sentence: str,
-    voice_id: str,
-    audio_service: AudioService,  # [WB-2] Shared instance passed in, not created here
+    sentence:      str,
+    voice_id:      str,
+    rate:          str,
+    audio_service: AudioService,
 ) -> bytes | None:
     clean_text = STAGE_DIR_PATTERN.sub('', sentence).strip()
-    if not clean_text:
+    if not clean_text or len(clean_text) < MIN_TTS_CHARS:  # [WB-5]
         return None
     try:
         audio_bytes = bytearray()
-        async for chunk in audio_service.tts_stream(clean_text, voice_id):
+        async for chunk in audio_service.tts_stream(clean_text, voice_id, rate):
             if chunk:
                 audio_bytes.extend(chunk)
         return bytes(audio_bytes) if audio_bytes else None
@@ -184,10 +160,6 @@ async def fetch_tts_audio(
 
 
 async def tts_sender_worker(queue: asyncio.Queue, ws: WebSocket) -> None:
-    """
-    Consumes TTS futures from the queue and sends audio chunks to the client
-    in order. Stops when it receives None (sentinel).
-    """
     while True:
         task = await queue.get()
         if task is None:
@@ -204,10 +176,10 @@ async def tts_sender_worker(queue: asyncio.Queue, ws: WebSocket) -> None:
                 except (RuntimeError, Exception) as e:
                     if "websocket.close" in str(e) or "already completed" in str(e):
                         break
-                    logger.error("❌ TTS sender send error: %s", e)
+                    logger.error("❌ TTS sender error: %s", e)
                     break
         except Exception as e:
-            logger.error("❌ TTS sender worker error: %s", e)
+            logger.error("❌ TTS worker error: %s", e)
         finally:
             queue.task_done()
 
@@ -218,21 +190,18 @@ async def tts_sender_worker(queue: asyncio.Queue, ws: WebSocket) -> None:
 
 @router.websocket("/ws/v1/interview/{session_id}")
 async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None)):
-    # ✅ SABSE PEHLE ACCEPT KARO
+
     await ws.accept()
 
     token_payload = _verify_ws_token(token)
     if token_payload is None:
-        # ✅ AB ye 1008 cleanly frontend tak jayega aur redirect kaam karega
         await ws.close(code=1008, reason="Unauthorized")
         return
 
-    user_id = token_payload.get("sub")
+    user_id       = token_payload.get("sub")
     audio_service = AudioService()
 
     try:
-        logger.info("🚀 WS accepted: session=%s user=%s", session_id, user_id)
-        # Baaki ka code waise hi rehne do...
         logger.info("🚀 WS accepted: session=%s user=%s", session_id, user_id)
 
         client = get_supabase_service_client()
@@ -263,17 +232,18 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
             "topic":       focus_topics,
         }
 
-        chairman_name  = get_chairman_name(domain)
+        # [WB-1] speaker_voices — mutable list for voice cycling
         speaker_voices = get_speaker_voices(domain)
-        chairman_voice = speaker_voices[chairman_name]
+        all_speakers   = list(speaker_voices.keys())
 
-        # [WB-5] Resume loaded once — injected into system prompt, never repeated
+        # Current "active" speaker index (starts at chairman = index 0)
+        active_speaker_idx  = 0
+        chairman_name       = all_speakers[0]
+        chairman_voice, chairman_rate = speaker_voices[chairman_name]
+
         resume_context = await build_resume_context(session_id)
         if resume_context:
-            logger.info(
-                "📄 Resume loaded: %d chars — injected in system prompt only",
-                len(resume_context),
-            )
+            logger.info("📄 Resume: %d chars", len(resume_context))
 
         try:
             await ws.send_json({
@@ -295,18 +265,19 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
         # ════════════════════════════════════════════════════════════════════
 
         async def generate_and_send_response(
-            user_msg: str | None,
-            history: list[dict],
-            dom: str,
-            is_first: bool = False,
+            user_msg:  str | None,
+            history:   list[dict],
+            dom:       str,
+            is_first:  bool = False,
+            is_system: bool = False,  # [WB-2] silence reminders
         ) -> None:
-            current_spk = chairman_name
-            current_v   = chairman_voice
+            # Always start from the currently active speaker
+            current_spk  = all_speakers[active_speaker_idx]
+            current_v, current_r = speaker_voices[current_spk]
 
             audio_queue = asyncio.Queue()
             worker_task = asyncio.create_task(tts_sender_worker(audio_queue, ws))
 
-            # [WB-8] safe_send defined once, used throughout
             async def safe_send(data: dict) -> bool:
                 try:
                     await ws.send_json(data)
@@ -320,33 +291,31 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
 
             try:
                 if is_first:
-                    # [WB-6] First-turn opener — resume is already in system prompt, not repeated here
                     domain_tone = {
                         "upsc": "formal, weighty, and dignified",
                         "sde":  "direct, technical, and no-nonsense",
                         "psu":  "professional, precise, and authoritative",
                     }.get(dom, "professional and direct")
 
+                    ch = all_speakers[active_speaker_idx]
                     user_content = (
-                        f"The candidate has just entered and taken their seat. "
-                        f"Open the interview immediately.\n"
-                        f"STRICT RULES FOR THIS OPENER:\n"
-                        f"  - NO weather, NO clock time, NO office/room descriptions\n"
-                        f"  - NO stage directions like (smiling) or (nodding)\n"
-                        f"  - NO 'Welcome to our office' or pleasantries\n"
-                        f"  - Begin with [{chairman_name}] speaker tag — mandatory\n"
-                        f"  - Maximum 18 words after the tag — count strictly\n"
+                        f"The candidate has just entered. Open the interview immediately.\n"
+                        f"STRICT RULES:\n"
+                        f"  - NO weather, NO clock, NO office descriptions\n"
+                        f"  - NO stage directions like (smiling)\n"
+                        f"  - Begin with [{ch}] speaker tag — mandatory\n"
+                        f"  - Maximum 18 words after tag — count strictly\n"
                         f"  - Tone: {domain_tone}\n"
-                        f"  - Close by asking them to introduce themselves\n"
-                        f"CORRECT examples:\n"
-                        f"  '[{chairman_name}] Let's begin. Please introduce yourself briefly.'\n"
-                        f"  '[{chairman_name}] Good. Tell us about yourself in a few sentences.'"
+                        f"  - End by asking to introduce themselves\n"
+                        f"EXAMPLES:\n"
+                        f"  '[{ch}] Let's begin. Please introduce yourself briefly.'\n"
+                        f"  '[{ch}] Good. Tell us about yourself in a few sentences.'"
                     )
                     structured_messages = [{"role": "user", "content": user_content}]
 
                 else:
                     if not user_msg or len(user_msg.strip()) < SILENCE_MIN_LENGTH:
-                        await notify_silence(ws, chairman_name)
+                        await notify_silence(ws, all_speakers[active_speaker_idx])
                         worker_task.cancel()
                         return
 
@@ -361,7 +330,6 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
                 if not await safe_send({"type": "thinking", "status": True}):
                     return
 
-                # [WB-5] resume_context passed as dedicated param to llm_service
                 async for chunk in llm_service.stream_response(
                     messages=structured_messages,
                     domain=dom,
@@ -371,54 +339,51 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
                     full_response   += chunk
                     sentence_buffer += chunk
 
-                    # Detect speaker changes for multi-panelist domains
                     window    = carry_over + chunk
                     tag_match = SPEAKER_TAG_PATTERN.search(window)
                     if tag_match:
                         new_spk = tag_match.group(1).strip()
                         if new_spk in speaker_voices and new_spk != current_spk:
-                            current_spk = new_spk
-                            current_v   = speaker_voices.get(current_spk, chairman_voice)
+                            current_spk          = new_spk
+                            current_v, current_r = speaker_voices.get(
+                                current_spk, (chairman_voice, chairman_rate)
+                            )
                             if not await safe_send({"type": "speaker_change", "speaker": current_spk}):
                                 return
                     carry_over = window[-OVERLAP_SIZE:]
 
-                    # Sentence-boundary TTS trigger
                     s_match = PAUSE_PATTERN.search(sentence_buffer)
                     if s_match:
                         sentence        = sentence_buffer[:s_match.start() + 1].strip()
                         sentence_buffer = sentence_buffer[s_match.end():]
-                        if sentence:
-                            # [WB-2] Pass shared audio_service instance
+                        if sentence and len(sentence) >= MIN_TTS_CHARS:
                             tts_task = asyncio.create_task(
-                                fetch_tts_audio(sentence, current_v, audio_service)
+                                fetch_tts_audio(sentence, current_v, current_r, audio_service)
                             )
                             await audio_queue.put(tts_task)
 
                     if not await safe_send({"type": "ai_text_chunk", "text": chunk}):
                         return
 
-                # Flush remaining text (with or without terminal punctuation)
                 remaining = sentence_buffer.strip()
-                if remaining:
-                    if remaining[-1] not in ".?!":
-                        logger.debug("⚠️ Flushing unpunctuated sentence: %s", remaining[:60])
+                if remaining and len(remaining) >= MIN_TTS_CHARS:
                     tts_task = asyncio.create_task(
-                        fetch_tts_audio(remaining, current_v, audio_service)
+                        fetch_tts_audio(remaining, current_v, current_r, audio_service)
                     )
                     await audio_queue.put(tts_task)
 
-                # [WB-7] Sentinel tells worker to stop; join() ensures all audio is sent
                 await audio_queue.put(None)
                 await worker_task
-                await audio_queue.join()
+                await audio_queue.join()  # [WB-4] wait for audio to drain first
 
                 await safe_send({"type": "response_complete", "text": full_response})
                 await safe_send({"type": "thinking", "status": False})
 
-                await db_insert_message(client, session_uuid, "assistant", full_response)
-                history.append({"role": "assistant", "content": full_response})
-                await redis_cache.set_session_context(session_id, build_active_history(history))
+                # [WB-2] Only save real responses to DB (not silence reminder replies)
+                if not is_system:
+                    await db_insert_message(client, session_uuid, "assistant", full_response)
+                    history.append({"role": "assistant", "content": full_response})
+                    await redis_cache.set_session_context(session_id, build_active_history(history))
 
             except asyncio.CancelledError:
                 if not worker_task.done():
@@ -426,9 +391,9 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
 
             except Exception as e:
                 if "websocket.close" in str(e) or "already completed" in str(e):
-                    logger.info("🔌 Client disconnected mid-generation [%s]", session_id)
+                    logger.info("🔌 Disconnected mid-generation [%s]", session_id)
                 else:
-                    logger.error("❌ AI generation error [%s]: %s", session_id, e, exc_info=True)
+                    logger.error("❌ AI error [%s]: %s", session_id, e, exc_info=True)
                 await safe_send({"type": "thinking", "status": False})
                 if not worker_task.done():
                     worker_task.cancel()
@@ -458,27 +423,42 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
         # MAIN RECEIVE LOOP
         # ════════════════════════════════════════════════════════════════════
 
-        # audio_buffer accumulates chunks between audio_chunk and speech_end events
-        audio_buffer: list[bytes] = []
-        # [WB-3] Track the MIME type hint from the most recent audio_chunk message
-        last_mime_hint: str | None = None
-
         while True:
             try:
                 data     = await ws.receive_json()
                 msg_type = data.get("type")
 
-                if msg_type == "audio_chunk":
-                    raw_data = data.get("data", "")
-                    if not raw_data:
-                        logger.warning("⚠️ Empty audio_chunk data — skipped")
+                if msg_type == "text":
+                    u_input = data.get("text", "").strip()
+                    if not u_input or len(u_input) < SILENCE_MIN_LENGTH:
+                        await notify_silence(ws, all_speakers[active_speaker_idx])
                         continue
+
+                    # [WB-2] Detect silence reminder — don't save to DB or history
+                    is_system = bool(SYSTEM_MSG_PATTERN.match(u_input))
+
                     try:
-                        audio_buffer.append(base64.b64decode(raw_data))
-                        # [WB-3] Save MIME hint for use in stt_stream()
-                        last_mime_hint = data.get("mimeType") or None
+                        # Don't echo system messages to captions
+                        if not is_system:
+                            await ws.send_json({"type": "transcription", "text": u_input})
                     except Exception:
-                        logger.warning("⚠️ Malformed audio_chunk (base64 decode failed) — skipped")
+                        pass
+
+                    if not is_system:
+                        await db_insert_message(client, session_uuid, "user", u_input)
+                        full_history.append({"role": "user", "content": u_input})
+                    # System messages go to LLM for AI to respond but DON'T pollute history
+                    # We pass the full history (without adding system msg) so AI has context
+
+                    if current_ai_task and not current_ai_task.done():
+                        current_ai_task.cancel()
+
+                    current_ai_task = asyncio.create_task(
+                        generate_and_send_response(
+                            u_input, full_history, domain,
+                            is_system=is_system,  # [WB-3]
+                        )
+                    )
 
                 elif msg_type == "interrupt":
                     if current_ai_task and not current_ai_task.done():
@@ -488,93 +468,36 @@ async def interview_ws(ws: WebSocket, session_id: str, token: str = Query(None))
                     except Exception:
                         pass
 
-                elif msg_type == "text":
-                    # Text-mode input (no audio)
-                    u_input = data.get("text", "").strip()
-                    if not u_input or len(u_input) < SILENCE_MIN_LENGTH:
-                        await notify_silence(ws, chairman_name)
-                        continue
-
+                elif msg_type == "voice_change":
+                    # [WB-1] Cycle to next panel member
+                    active_speaker_idx = (active_speaker_idx + 1) % len(all_speakers)
+                    next_speaker       = all_speakers[active_speaker_idx]
+                    chairman_voice, chairman_rate = speaker_voices[next_speaker]
+                    logger.info("🎭 Voice switched to: %s", next_speaker)
                     try:
-                        await ws.send_json({"type": "transcription", "text": u_input})
+                        await ws.send_json({
+                            "type":  "voice_changed",
+                            "voice": next_speaker,
+                        })
                     except Exception:
                         pass
-
-                    await db_insert_message(client, session_uuid, "user", u_input)
-                    full_history.append({"role": "user", "content": u_input})
-
-                    if current_ai_task and not current_ai_task.done():
-                        current_ai_task.cancel()
-                    current_ai_task = asyncio.create_task(
-                        generate_and_send_response(u_input, full_history, domain)
-                    )
-
-                elif msg_type == "speech_end":
-                    # Audio speech turn complete — run STT
-                    raw_audio    = b"".join(audio_buffer)
-                    audio_buffer = []
-
-                    if not raw_audio or len(raw_audio) < 100:
-                        await notify_silence(ws, chairman_name)
-                        last_mime_hint = None
-                        continue
-
-                    # [WB-4] Extended format check for logging/debugging
-                    magic4 = raw_audio[:4]
-                    magic8 = raw_audio[4:8]
-                    is_webm = magic4 == b'\x1a\x45\xdf\xa3'
-                    is_ogg  = magic4 == b'OggS'
-                    is_mp4  = magic8 == b'ftyp'
-                    is_aac  = magic4[:2] in (b'\xff\xf1', b'\xff\xf9')
-                    is_wav  = magic4 == b'RIFF'
-
-                    if not any([is_webm, is_ogg, is_mp4, is_aac, is_wav]):
-                        logger.warning(
-                            "⚠️ Unrecognised audio format (magic bytes: %s, hint: %s)",
-                            raw_audio[:8].hex(), last_mime_hint,
-                        )
-
-                    # [WB-3] Pass MIME hint so audio_service can use it as fallback
-                    u_input = await audio_service.stt_stream(
-                        raw_audio,
-                        mime_hint=last_mime_hint,
-                    )
-                    last_mime_hint = None  # reset after use
-
-                    if not u_input or len(u_input.strip()) < SILENCE_MIN_LENGTH:
-                        await notify_silence(ws, chairman_name)
-                        continue
-
-                    try:
-                        await ws.send_json({"type": "transcription", "text": u_input})
-                    except Exception:
-                        pass
-
-                    await db_insert_message(client, session_uuid, "user", u_input)
-                    full_history.append({"role": "user", "content": u_input})
-
-                    if current_ai_task and not current_ai_task.done():
-                        current_ai_task.cancel()
-                    current_ai_task = asyncio.create_task(
-                        generate_and_send_response(u_input, full_history, domain)
-                    )
 
                 elif msg_type == "telemetry":
                     asyncio.create_task(redis_cache.store_telemetry(session_id, data))
 
             except WebSocketDisconnect:
-                logger.info("🔌 Client disconnected: %s", session_id)
+                logger.info("🔌 Disconnected: %s", session_id)
                 break
 
             except RuntimeError as e:
                 if "websocket.close" in str(e) or "already completed" in str(e):
-                    logger.info("🔌 Client disconnected abruptly: %s", session_id)
+                    logger.info("🔌 Abrupt disconnect: %s", session_id)
                 else:
-                    logger.error("❌ WS receive error [%s]: %s", session_id, e, exc_info=True)
+                    logger.error("❌ WS error [%s]: %s", session_id, e, exc_info=True)
                 break
 
             except Exception as e:
-                logger.error("❌ WS receive error [%s]: %s", session_id, e, exc_info=True)
+                logger.error("❌ WS error [%s]: %s", session_id, e, exc_info=True)
                 break
 
     except Exception as e:
